@@ -8,19 +8,19 @@
 <link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --cover:#173B2E;
-    --cover-dark:#0F281F;
+    --cover:#12395F;
+    --cover-dark:#0A2544;
     --paper:#FAF6EA;
-    --paper-line:#D8E3D2;
+    --paper-line:#D9E3DF;
     --ink:#1E2A3A;
-    --ink-soft:#5A6B5F;
-    --brass:#A9793B;
-    --brass-light:#C99A5B;
+    --ink-soft:#57696B;
+    --brass:#2E6FA8;
+    --brass-light:#5B9BD1;
     --red:#8B2E28;
     --red-light:#F3E1DE;
-    --green-ink:#20553F;
-    --green-light:#E1EEE3;
-    --shadow: 0 8px 24px rgba(15,40,31,0.18);
+    --green-ink:#2E8B3D;
+    --green-light:#E3F2E5;
+    --shadow: 0 8px 24px rgba(10,37,68,0.18);
   }
   *{box-sizing:border-box;}
   body{
@@ -56,8 +56,9 @@
     width:100%;
     max-width:360px;
   }
-  .auth-card .eyebrow{color:var(--brass);}
-  .auth-card h1{color:var(--green-ink);font-size:22px;}
+  .auth-logo{display:block;width:88px;height:88px;margin:0 auto 16px;border-radius:50%;object-fit:cover;box-shadow:0 2px 8px rgba(10,37,68,0.15);}
+  .auth-card .eyebrow{color:var(--brass);text-align:center;}
+  .auth-card h1{color:var(--green-ink);font-size:22px;text-align:center;}
   .auth-field{margin-bottom:14px;}
   .auth-field label{display:block;font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);margin-bottom:4px;}
   .auth-field input{
@@ -97,7 +98,8 @@
     background: repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0 2px, transparent 2px 40px);
     pointer-events:none;
   }
-  .cover-left{position:relative;z-index:1;}
+  .cover-left{position:relative;z-index:1;display:flex;align-items:center;gap:16px;}
+  .header-logo{width:64px;height:64px;border-radius:50%;object-fit:cover;flex-shrink:0;box-shadow:0 2px 8px rgba(10,37,68,0.3);}
   .eyebrow{
     font-family:'IBM Plex Mono', monospace;
     letter-spacing:.14em;
@@ -436,6 +438,7 @@
 
 <div class="auth-overlay" id="authOverlay">
   <div class="auth-card">
+    <img class="auth-logo" src="logo.jpg" alt="Distribuidora RG Tropical">
     <p class="eyebrow">Libro contable · acceso</p>
     <h1>Iniciar sesión</h1>
     <div class="auth-field">
@@ -457,9 +460,12 @@
 
   <header class="cover">
     <div class="cover-left">
-      <p class="eyebrow">Libro contable · registro digital</p>
-      <h1>Contabilidad</h1>
-      <input class="biz-name" id="bizName" placeholder="Nombre del negocio o proyecto">
+      <img class="header-logo" src="logo.jpg" alt="Distribuidora RG Tropical">
+      <div>
+        <p class="eyebrow">Libro contable · registro digital</p>
+        <h1>Contabilidad</h1>
+        <input class="biz-name" id="bizName" placeholder="Nombre del negocio o proyecto">
+      </div>
     </div>
     <div class="stamp" id="stampBox">
       <div class="stamp-label">Saldo</div>
