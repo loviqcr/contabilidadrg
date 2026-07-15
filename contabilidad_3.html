@@ -449,7 +449,6 @@
     <p class="auth-error" id="authError"></p>
     <div class="auth-actions">
       <button class="btn btn-primary" id="authLoginBtn" type="button">Entrar</button>
-      <button class="btn btn-ghost" id="authRegisterBtn" type="button">Crear cuenta</button>
     </div>
   </div>
 </div>
@@ -475,6 +474,7 @@
     <button data-tab="movimientos">Movimientos</button>
     <button data-tab="inventario">Inventario</button>
     <button data-tab="categorias">Categorías</button>
+    <button data-tab="admin" id="adminTabBtn" style="display:none;">Usuarios</button>
   </nav>
 
   <div class="page">
@@ -643,13 +643,37 @@
       </div>
     </div>
 
+    <!-- ADMIN -->
+    <div class="view" id="view-admin">
+      <div class="section-title"><span class="num">§1</span> Crear nuevo usuario</div>
+      <form id="adminCreateForm" class="prod-form" style="align-items:flex-start;">
+        <div class="prod-form-fields">
+          <div class="form-row">
+            <div>
+              <label>Correo del nuevo usuario</label>
+              <input type="email" id="adminNewEmail" placeholder="usuario@correo.com" required>
+            </div>
+            <div>
+              <label>Contraseña</label>
+              <input type="text" id="adminNewPassword" placeholder="Mínimo 6 caracteres" required>
+            </div>
+          </div>
+          <p class="auth-error" id="adminError"></p>
+          <p style="color:var(--green-ink);font-family:'IBM Plex Mono',monospace;font-size:12.5px;margin:0;" id="adminSuccess"></p>
+          <div class="form-row-actions">
+            <button type="submit" class="btn btn-primary">Crear usuario</button>
+          </div>
+        </div>
+      </form>
+    </div>
+
   </div>
 
   <footer>Los datos se guardan automáticamente en tu cuenta</footer>
 </div>
 
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, signOut
@@ -664,9 +688,22 @@ const firebaseConfig = {
   messagingSenderId: "468292887116",
   appId: "1:468292887116:web:15ade733eb9de8a0b74ae9"
 };
+const ADMIN_EMAIL = "loviqcr@gmail.com";
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
+
+// Creates a user without disturbing the admin's own session, via a throwaway secondary app instance.
+async function createUserAsAdmin(email, password){
+  const secondaryApp = initializeApp(firebaseConfig, 'Secondary-' + Date.now());
+  const secondaryAuth = getAuth(secondaryApp);
+  try{
+    await createUserWithEmailAndPassword(secondaryAuth, email, password);
+  } finally {
+    await signOut(secondaryAuth).catch(()=>{});
+    await deleteApp(secondaryApp).catch(()=>{});
+  }
+}
 
 (function(){
   let currentUser = null;
@@ -732,11 +769,21 @@ const db = getFirestore(firebaseApp);
     }catch(e){ authError.textContent = authErrorMessage(e); }
   });
 
-  document.getElementById('authRegisterBtn').addEventListener('click', async ()=>{
-    authError.textContent = '';
+  // ---------- ADMIN: CREATE USER ----------
+  const adminTabBtn = document.getElementById('adminTabBtn');
+  document.getElementById('adminCreateForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const email = document.getElementById('adminNewEmail').value.trim();
+    const password = document.getElementById('adminNewPassword').value;
+    const errEl = document.getElementById('adminError');
+    const okEl = document.getElementById('adminSuccess');
+    errEl.textContent = '';
+    okEl.textContent = '';
     try{
-      await createUserWithEmailAndPassword(auth, authEmail.value.trim(), authPassword.value);
-    }catch(e){ authError.textContent = authErrorMessage(e); }
+      await createUserAsAdmin(email, password);
+      okEl.textContent = `Usuario ${email} creado correctamente.`;
+      document.getElementById('adminCreateForm').reset();
+    }catch(e){ errEl.textContent = authErrorMessage(e); }
   });
 
   document.getElementById('logoutBtn').addEventListener('click', ()=> signOut(auth));
@@ -748,11 +795,13 @@ const db = getFirestore(firebaseApp);
       currentUser = user;
       authOverlay.style.display = 'none';
       appRoot.style.display = 'block';
+      adminTabBtn.style.display = (user.email === ADMIN_EMAIL) ? '' : 'none';
       await loadData();
     } else {
       currentUser = null;
       authOverlay.style.display = 'flex';
       appRoot.style.display = 'none';
+      adminTabBtn.style.display = 'none';
     }
   });
 
