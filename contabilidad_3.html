@@ -37,7 +37,44 @@
     max-width:1100px;
     margin:0 auto;
     padding:28px 20px 60px;
+    display:none;
   }
+
+  /* AUTH */
+  .auth-overlay{
+    position:fixed; inset:0;
+    background: var(--cover);
+    display:flex; align-items:center; justify-content:center;
+    padding:20px;
+    z-index:100;
+  }
+  .auth-card{
+    background:var(--paper);
+    border-radius:14px;
+    box-shadow:var(--shadow);
+    padding:32px 30px;
+    width:100%;
+    max-width:360px;
+  }
+  .auth-card .eyebrow{color:var(--brass);}
+  .auth-card h1{color:var(--green-ink);font-size:22px;}
+  .auth-field{margin-bottom:14px;}
+  .auth-field label{display:block;font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);margin-bottom:4px;}
+  .auth-field input{
+    width:100%;padding:9px 10px;border:1px solid var(--paper-line);border-radius:6px;
+    font-family:'Inter',sans-serif;font-size:13.5px;background:#fff;color:var(--ink);
+  }
+  .auth-error{color:var(--red);font-size:12.5px;min-height:16px;margin:0 0 10px;}
+  .auth-actions{display:flex;gap:10px;}
+  .auth-actions .btn{flex:1;}
+  .logout-btn{
+    position:relative;z-index:1;
+    align-self:flex-start;
+    background:transparent;
+    border:1px solid rgba(241,234,216,0.4);
+    color:#F1EAD8;
+  }
+  .logout-btn:hover{background:rgba(241,234,216,0.12);}
 
   /* HEADER */
   header.cover{
@@ -396,6 +433,27 @@
 </style>
 </head>
 <body>
+
+<div class="auth-overlay" id="authOverlay">
+  <div class="auth-card">
+    <p class="eyebrow">Libro contable · acceso</p>
+    <h1>Iniciar sesión</h1>
+    <div class="auth-field">
+      <label>Correo electrónico</label>
+      <input type="email" id="authEmail" placeholder="tu@correo.com" autocomplete="username">
+    </div>
+    <div class="auth-field">
+      <label>Contraseña</label>
+      <input type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <p class="auth-error" id="authError"></p>
+    <div class="auth-actions">
+      <button class="btn btn-primary" id="authLoginBtn" type="button">Entrar</button>
+      <button class="btn btn-ghost" id="authRegisterBtn" type="button">Crear cuenta</button>
+    </div>
+  </div>
+</div>
+
 <div class="app">
 
   <header class="cover">
@@ -409,6 +467,7 @@
       <div class="stamp-amount" id="stampAmount">₡0.00</div>
       <div class="stamp-sub" id="stampSub">al día de hoy</div>
     </div>
+    <button class="btn logout-btn" id="logoutBtn" type="button">Cerrar sesión</button>
   </header>
 
   <nav class="tabs">
@@ -586,47 +645,116 @@
 
   </div>
 
-  <footer>Los datos se guardan automáticamente en este dispositivo</footer>
+  <footer>Los datos se guardan automáticamente en tu cuenta</footer>
 </div>
 
-<script>
-(function(){
-  const STORAGE_KEY = 'contabilidad_data_v1';
-  const hasWindowStorage = typeof window.storage !== 'undefined';
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword,
+  createUserWithEmailAndPassword, signOut
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-  let data = {
-    bizName: '',
-    transactions: [],
-    products: [],
-    categories: {
-      ingreso: ['Ventas','Servicios','Otros ingresos'],
-      gasto: ['Suministros','Alquiler','Salarios','Impuestos','Otros gastos']
-    }
-  };
+const firebaseConfig = {
+  apiKey: "AIzaSyDs4nbxNMMrDOy5Mvr0zPaR-iWAF3LFFtQ",
+  authDomain: "contabilidad-rg.firebaseapp.com",
+  projectId: "contabilidad-rg",
+  storageBucket: "contabilidad-rg.firebasestorage.app",
+  messagingSenderId: "468292887116",
+  appId: "1:468292887116:web:15ade733eb9de8a0b74ae9"
+};
+const firebaseApp = initializeApp(firebaseConfig);
+const auth = getAuth(firebaseApp);
+const db = getFirestore(firebaseApp);
+
+(function(){
+  let currentUser = null;
+
+  function defaultData(){
+    return {
+      bizName: '',
+      transactions: [],
+      products: [],
+      categories: {
+        ingreso: ['Ventas','Servicios','Otros ingresos'],
+        gasto: ['Suministros','Alquiler','Salarios','Impuestos','Otros gastos']
+      }
+    };
+  }
+
+  let data = defaultData();
+
+  function userDocRef(){
+    return doc(db, 'users', currentUser.uid);
+  }
 
   async function loadData(){
+    data = defaultData();
     try{
-      if(hasWindowStorage){
-        const res = await window.storage.get(STORAGE_KEY, false);
-        if(res && res.value) data = JSON.parse(res.value);
-      } else {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if(raw) data = JSON.parse(raw);
-      }
-    }catch(e){ /* no data yet */ }
+      const snap = await getDoc(userDocRef());
+      if(snap.exists()) data = snap.data();
+    }catch(e){ console.error('Error cargando datos', e); }
     if(!data.products) data.products = [];
     render();
   }
 
   async function saveData(){
     try{
-      if(hasWindowStorage){
-        await window.storage.set(STORAGE_KEY, JSON.stringify(data), false);
-      } else {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-      }
+      await setDoc(userDocRef(), data);
     }catch(e){ console.error('Error guardando datos', e); }
   }
+
+  // ---------- AUTH ----------
+  const authOverlay = document.getElementById('authOverlay');
+  const appRoot = document.querySelector('.app');
+  const authEmail = document.getElementById('authEmail');
+  const authPassword = document.getElementById('authPassword');
+  const authError = document.getElementById('authError');
+
+  function authErrorMessage(e){
+    const map = {
+      'auth/invalid-email': 'Correo inválido.',
+      'auth/user-not-found': 'No existe una cuenta con ese correo.',
+      'auth/wrong-password': 'Contraseña incorrecta.',
+      'auth/email-already-in-use': 'Ya existe una cuenta con ese correo.',
+      'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres.',
+      'auth/invalid-credential': 'Correo o contraseña incorrectos.',
+      'auth/missing-password': 'Escribe una contraseña.'
+    };
+    return map[e.code] || 'Ocurrió un error. Intenta de nuevo.';
+  }
+
+  document.getElementById('authLoginBtn').addEventListener('click', async ()=>{
+    authError.textContent = '';
+    try{
+      await signInWithEmailAndPassword(auth, authEmail.value.trim(), authPassword.value);
+    }catch(e){ authError.textContent = authErrorMessage(e); }
+  });
+
+  document.getElementById('authRegisterBtn').addEventListener('click', async ()=>{
+    authError.textContent = '';
+    try{
+      await createUserWithEmailAndPassword(auth, authEmail.value.trim(), authPassword.value);
+    }catch(e){ authError.textContent = authErrorMessage(e); }
+  });
+
+  document.getElementById('logoutBtn').addEventListener('click', ()=> signOut(auth));
+
+  onAuthStateChanged(auth, async (user)=>{
+    authError.textContent = '';
+    authPassword.value = '';
+    if(user){
+      currentUser = user;
+      authOverlay.style.display = 'none';
+      appRoot.style.display = 'block';
+      await loadData();
+    } else {
+      currentUser = null;
+      authOverlay.style.display = 'flex';
+      appRoot.style.display = 'none';
+    }
+  });
 
   function fmt(n){
     const num = Number(n)||0;
@@ -1109,7 +1237,6 @@
   }
 
   document.getElementById('txDate').valueAsDate = new Date();
-  loadData();
 })();
 </script>
 </body>
