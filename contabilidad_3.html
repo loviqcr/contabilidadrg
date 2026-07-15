@@ -696,7 +696,12 @@ const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 
-// Creates a user without disturbing the admin's own session, via a throwaway secondary app instance.
+// NOTA DE SEGURIDAD: esto solo oculta el botón en la interfaz. Sin un backend con
+// Admin SDK (Cloud Functions con plan Blaze, o un servidor externo con una llave de
+// servicio), Firebase no tiene forma de impedir que cualquiera cree una cuenta
+// llamando a createUserWithEmailAndPassword directamente. Riesgo aceptado por ahora
+// — ver la auditoría de seguridad para más detalle.
+// Crea un usuario sin cerrar la sesión del admin, vía una app secundaria desechable.
 async function createUserAsAdmin(email, password){
   const secondaryApp = initializeApp(firebaseConfig, 'Secondary-' + Date.now());
   const secondaryAuth = getAuth(secondaryApp);
@@ -794,6 +799,8 @@ async function createUserAsAdmin(email, password){
     }catch(e){ errEl.textContent = authErrorMessage(e); }
   });
 
+  // Sin un backend con Admin SDK, Firebase no permite editar ni eliminar cuentas
+  // ajenas desde el cliente — este directorio es solo lectura por esa razón.
   async function renderUserList(){
     const listEl = document.getElementById('adminUserList');
     listEl.innerHTML = '<p class="empty-state" style="padding:12px 0;">Cargando...</p>';
