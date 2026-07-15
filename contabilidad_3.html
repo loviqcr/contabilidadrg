@@ -665,6 +665,9 @@
           </div>
         </div>
       </form>
+
+      <div class="section-title"><span class="num">§2</span> Usuarios registrados</div>
+      <div class="cat-list" id="adminUserList"></div>
     </div>
 
   </div>
@@ -678,7 +681,7 @@ import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, signOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDs4nbxNMMrDOy5Mvr0zPaR-iWAF3LFFtQ",
@@ -697,8 +700,12 @@ const db = getFirestore(firebaseApp);
 async function createUserAsAdmin(email, password){
   const secondaryApp = initializeApp(firebaseConfig, 'Secondary-' + Date.now());
   const secondaryAuth = getAuth(secondaryApp);
+  const secondaryDb = getFirestore(secondaryApp);
   try{
-    await createUserWithEmailAndPassword(secondaryAuth, email, password);
+    const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+    await setDoc(doc(secondaryDb, 'userDirectory', cred.user.uid), {
+      email, createdAt: new Date().toISOString()
+    });
   } finally {
     await signOut(secondaryAuth).catch(()=>{});
     await deleteApp(secondaryApp).catch(()=>{});
@@ -783,8 +790,32 @@ async function createUserAsAdmin(email, password){
       await createUserAsAdmin(email, password);
       okEl.textContent = `Usuario ${email} creado correctamente.`;
       document.getElementById('adminCreateForm').reset();
+      renderUserList();
     }catch(e){ errEl.textContent = authErrorMessage(e); }
   });
+
+  async function renderUserList(){
+    const listEl = document.getElementById('adminUserList');
+    listEl.innerHTML = '<p class="empty-state" style="padding:12px 0;">Cargando...</p>';
+    try{
+      const snap = await getDocs(collection(db, 'userDirectory'));
+      const users = [];
+      snap.forEach(d=>users.push(d.data()));
+      users.sort((a,b)=> (a.createdAt||'').localeCompare(b.createdAt||''));
+      if(users.length===0){
+        listEl.innerHTML = '<p class="empty-state" style="padding:12px 0;">Sin usuarios registrados aún</p>';
+        return;
+      }
+      listEl.innerHTML = users.map(u=>`
+        <div class="cat-item">
+          <span>${escapeHtml(u.email)}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);">${u.createdAt ? new Date(u.createdAt).toLocaleDateString('es-CR') : ''}</span>
+        </div>
+      `).join('');
+    }catch(e){
+      listEl.innerHTML = `<p class="empty-state" style="padding:12px 0;">Error cargando usuarios: ${escapeHtml(e.message)}</p>`;
+    }
+  }
 
   document.getElementById('logoutBtn').addEventListener('click', ()=> signOut(auth));
 
@@ -796,6 +827,7 @@ async function createUserAsAdmin(email, password){
       authOverlay.style.display = 'none';
       appRoot.style.display = 'block';
       adminTabBtn.style.display = (user.email === ADMIN_EMAIL) ? '' : 'none';
+      if(user.email === ADMIN_EMAIL) renderUserList();
       await loadData();
     } else {
       currentUser = null;
