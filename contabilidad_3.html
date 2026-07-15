@@ -687,8 +687,7 @@ import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, signOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getStorage, ref, uploadString, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDs4nbxNMMrDOy5Mvr0zPaR-iWAF3LFFtQ",
@@ -702,7 +701,6 @@ const ADMIN_EMAIL = "loviqcr@gmail.com";
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
-const storage = getStorage(firebaseApp);
 
 // NOTA DE SEGURIDAD (riesgo aceptado): esto solo oculta el botón en la interfaz.
 // Firebase no ofrece forma de impedir que cualquiera cree una cuenta llamando a
@@ -748,19 +746,38 @@ async function createUserAsAdmin(email, password){
     return doc(db, 'users', currentUser.uid);
   }
 
+  // Cada producto vive en su propio documento (users/{uid}/products/{id}) en vez
+  // de un array dentro del documento principal — un solo documento de Firestore
+  // tiene un límite de 1MB, y unas pocas fotos ahí lo llenaban y hacían fallar
+  // el guardado en silencio.
+  function productsColRef(){
+    return collection(db, 'users', currentUser.uid, 'products');
+  }
+
+  async function saveProduct(product){
+    await setDoc(doc(productsColRef(), product.id), product);
+  }
+
+  async function deleteProductDoc(id){
+    await deleteDoc(doc(productsColRef(), id));
+  }
+
   async function loadData(){
     data = defaultData();
     try{
       const snap = await getDoc(userDocRef());
-      if(snap.exists()) data = snap.data();
+      if(snap.exists()) data = { ...defaultData(), ...snap.data() };
+      const prodSnap = await getDocs(productsColRef());
+      data.products = [];
+      prodSnap.forEach(d=>data.products.push({ id: d.id, ...d.data() }));
     }catch(e){ console.error('Error cargando datos', e); }
-    if(!data.products) data.products = [];
     render();
   }
 
   async function saveData(){
     try{
-      await setDoc(userDocRef(), data);
+      const { products, ...mainData } = data;
+      await setDoc(userDocRef(), mainData);
     }catch(e){
       console.error('Error guardando datos', e);
       alert('No se pudo guardar el cambio: ' + e.message);
@@ -986,16 +1003,7 @@ async function createUserAsAdmin(email, password){
 
   // ---------- INVENTARIO ----------
   let editingProdId = null;
-  let pendingImage = null; // base64 string (preview) or existing download URL
-  let pendingImageChanged = false;
-
-  // Las fotos van a Firebase Storage (no a Firestore) porque un documento de
-  // Firestore tiene un límite de 1MB — unas pocas fotos en base64 lo llenarían.
-  async function uploadProductImage(productId, dataUrl){
-    const imgRef = ref(storage, `users/${currentUser.uid}/products/${productId}.jpg`);
-    await uploadString(imgRef, dataUrl, 'data_url');
-    return await getDownloadURL(imgRef);
-  }
+  let pendingImage = null; // base64 string
 
   function populateProdCatSelect(){
     const sel = document.getElementById('prodCat');
@@ -1026,7 +1034,6 @@ async function createUserAsAdmin(email, password){
         canvas.width = w; canvas.height = h;
         canvas.getContext('2d').drawImage(img,0,0,w,h);
         pendingImage = canvas.toDataURL('image/jpeg', 0.75);
-        pendingImageChanged = true;
         const preview = document.getElementById('imgPreview');
         preview.src = pendingImage;
         preview.style.display = 'block';
@@ -1040,7 +1047,6 @@ async function createUserAsAdmin(email, password){
   function resetProdForm(){
     document.getElementById('prodForm').reset();
     pendingImage = null;
-    pendingImageChanged = false;
     editingProdId = null;
     document.getElementById('imgPreview').style.display = 'none';
     document.getElementById('imgPreview').src = '';
@@ -1062,23 +1068,21 @@ async function createUserAsAdmin(email, password){
     if(!name || isNaN(price) || price<0 || isNaN(stock) || stock<0) return;
 
     const productId = editingProdId || uid();
-    let imageUrl = editingProdId ? (data.products.find(p=>p.id===editingProdId)?.image || null) : null;
-    if(pendingImageChanged && pendingImage){
-      try{
-        imageUrl = await uploadProductImage(productId, pendingImage);
-      }catch(err){
-        alert('No se pudo subir la foto: ' + err.message);
-        return;
-      }
-    }
-
+    let product;
     if(editingProdId){
-      const p = data.products.find(p=>p.id===editingProdId);
-      if(p){ p.name = name; p.cat = cat; p.cost = cost; p.price = price; p.stock = stock; p.image = imageUrl; }
+      product = data.products.find(p=>p.id===editingProdId);
+      product.name = name; product.cat = cat; product.cost = cost; product.price = price; product.stock = stock;
+      if(pendingImage) product.image = pendingImage;
     } else {
-      data.products.push({ id: productId, name, cat, cost, price, stock, image: imageUrl });
+      product = { id: productId, name, cat, cost, price, stock, image: pendingImage || null };
+      data.products.push(product);
     }
-    await saveData();
+    try{
+      await saveProduct(product);
+    }catch(err){
+      alert('No se pudo guardar el producto: ' + err.message);
+      return;
+    }
     resetProdForm();
     renderProducts();
   });
@@ -1094,7 +1098,6 @@ async function createUserAsAdmin(email, password){
     document.getElementById('prodPrice').value = p.price;
     document.getElementById('prodStock').value = p.stock;
     pendingImage = p.image || null;
-    pendingImageChanged = false;
     const preview = document.getElementById('imgPreview');
     if(p.image){ preview.src = p.image; preview.style.display='block'; document.getElementById('imgDropLabel').style.display='none'; }
     else { preview.style.display='none'; document.getElementById('imgDropLabel').style.display='block'; }
@@ -1106,13 +1109,9 @@ async function createUserAsAdmin(email, password){
 
   function deleteProduct(id){
     if(!confirm('¿Eliminar este producto del inventario?')) return;
-    const p = data.products.find(p=>p.id===id);
     data.products = data.products.filter(p=>p.id!==id);
-    saveData();
     renderProducts();
-    if(p && p.image){
-      deleteObject(ref(storage, `users/${currentUser.uid}/products/${id}.jpg`)).catch(()=>{});
-    }
+    deleteProductDoc(id).catch(err=>alert('No se pudo eliminar el producto: ' + err.message));
   }
 
   const COGS_CAT = 'Costo de ventas';
@@ -1142,6 +1141,7 @@ async function createUserAsAdmin(email, password){
       });
     }
     saveData();
+    saveProduct(p).catch(err=>alert('No se pudo actualizar el stock: ' + err.message));
     renderProducts();
     populateCatSelect();
     populateMonthFilter();
@@ -1160,8 +1160,8 @@ async function createUserAsAdmin(email, password){
     const p = data.products.find(p=>p.id===id);
     if(!p) return;
     p.stock += n;
-    saveData();
     renderProducts();
+    saveProduct(p).catch(err=>alert('No se pudo actualizar el stock: ' + err.message));
   }
 
   document.getElementById('prodSearch').addEventListener('input', renderProducts);

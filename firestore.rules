@@ -3,9 +3,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Cada usuario solo puede leer/escribir su propio libro contable.
+    // Cada usuario solo puede leer/escribir su propio libro contable,
+    // incluida su subcolección de productos (cada producto es su propio
+    // documento para no toparse con el límite de 1MB por documento).
     match /users/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
+
+      match /products/{productId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
     }
 
     // Solo el admin puede leer el directorio de usuarios.
