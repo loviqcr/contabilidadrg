@@ -696,11 +696,13 @@ const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 
-// NOTA DE SEGURIDAD: esto solo oculta el botón en la interfaz. Sin un backend con
-// Admin SDK (Cloud Functions con plan Blaze, o un servidor externo con una llave de
-// servicio), Firebase no tiene forma de impedir que cualquiera cree una cuenta
-// llamando a createUserWithEmailAndPassword directamente. Riesgo aceptado por ahora
-// — ver la auditoría de seguridad para más detalle.
+// NOTA DE SEGURIDAD (riesgo aceptado): esto solo oculta el botón en la interfaz.
+// Firebase no ofrece forma de impedir que cualquiera cree una cuenta llamando a
+// createUserWithEmailAndPassword directamente, salvo con un backend con Admin SDK
+// (Cloud Functions/Blaze, o un servidor externo con llave de servicio). Se intentó
+// la ruta de llave de servicio y quedó bloqueada por una política de organización
+// que Google aplica por defecto a proyectos de cuentas personales — ni el dueño del
+// proyecto puede desactivarla. Ver la auditoría de seguridad para más detalle.
 // Crea un usuario sin cerrar la sesión del admin, vía una app secundaria desechable.
 async function createUserAsAdmin(email, password){
   const secondaryApp = initializeApp(firebaseConfig, 'Secondary-' + Date.now());
