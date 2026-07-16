@@ -1364,44 +1364,51 @@ async function resolveLoginEmail(input){
     }
   }
 
-  // Muestra un selector de comercio en la propia tarjeta del producto antes de
-  // vender (si hay comercios registrados); si no hay ninguno, vende directo.
+  // Muestra cantidad + comercio en la propia tarjeta del producto antes de vender.
   function sellOne(id, btn){
-    if(data.comercios.length===0){ confirmSale(id, ''); return; }
+    const p = data.products.find(p=>p.id===id);
+    if(!p) return;
     const actions = btn.closest('.product-actions');
     actions.innerHTML = `
-      <select class="sell-comercio-select" style="flex:1;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 8px;border:1px solid var(--paper-line);border-radius:5px;background:#fff;">
-        <option value="">Sin comercio / venta directa</option>
-        ${data.comercios.map(c=>`<option value="${escapeHtml(c.nombre)}">${escapeHtml(c.nombre)}</option>`).join('')}
-      </select>
+      <input type="number" class="sell-qty-input" value="1" min="1" max="${p.stock}" step="1" style="width:60px;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 8px;border:1px solid var(--paper-line);border-radius:5px;background:#fff;">
+      ${data.comercios.length ? `
+        <select class="sell-comercio-select" style="flex:1;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 8px;border:1px solid var(--paper-line);border-radius:5px;background:#fff;">
+          <option value="">Sin comercio / venta directa</option>
+          ${data.comercios.map(c=>`<option value="${escapeHtml(c.nombre)}">${escapeHtml(c.nombre)}</option>`).join('')}
+        </select>
+      ` : ''}
       <button class="btn btn-sell" data-confirm-sell="${id}">Confirmar</button>
       <button class="btn btn-ghost" data-cancel-sell="1">Cancelar</button>
     `;
     actions.querySelector('[data-cancel-sell]').addEventListener('click', renderProducts);
     actions.querySelector('[data-confirm-sell]').addEventListener('click', ()=>{
-      const comercio = actions.querySelector('.sell-comercio-select').value;
-      confirmSale(id, comercio);
+      const qty = parseInt(actions.querySelector('.sell-qty-input').value, 10);
+      const comercioSelect = actions.querySelector('.sell-comercio-select');
+      const comercio = comercioSelect ? comercioSelect.value : '';
+      if(!qty || qty<=0){ alert('Escribe una cantidad válida.'); return; }
+      confirmSale(id, comercio, qty);
     });
   }
 
-  function confirmSale(id, comercioNombre){
+  function confirmSale(id, comercioNombre, qty){
     const p = data.products.find(p=>p.id===id);
     if(!p) return;
-    if(p.stock<=0){ alert('No hay existencias disponibles de este producto.'); return; }
-    p.stock -= 1;
+    if(qty>p.stock){ alert(`Solo hay ${p.stock} en existencia.`); return; }
+    p.stock -= qty;
     const today = new Date().toISOString().slice(0,10);
-    const desc = comercioNombre ? `Venta de ${p.name} a ${comercioNombre}` : `Venta de ${p.name}`;
+    const qtyLabel = qty>1 ? `${qty} ` : '';
+    const desc = comercioNombre ? `Venta de ${qtyLabel}${p.name} a ${comercioNombre}` : `Venta de ${qtyLabel}${p.name}`;
     data.transactions.push({
       id: uid(), date: today,
       type:'ingreso', desc, cat: p.cat, comercio: comercioNombre || null,
-      qty:1, unitPrice:p.price, amount:p.price
+      qty, unitPrice:p.price, amount:p.price*qty
     });
     if(p.cost && p.cost>0){
       ensureCogsCategory();
       data.transactions.push({
         id: uid(), date: today,
-        type:'gasto', desc:`Costo de ${p.name}`, cat: COGS_CAT,
-        qty:1, unitPrice:p.cost, amount:p.cost
+        type:'gasto', desc:`Costo de ${qtyLabel}${p.name}`, cat: COGS_CAT,
+        qty, unitPrice:p.cost, amount:p.cost*qty
       });
     }
     saveData();
