@@ -442,8 +442,8 @@
     <p class="eyebrow">Libro contable · acceso</p>
     <h1>Iniciar sesión</h1>
     <div class="auth-field">
-      <label>Correo electrónico</label>
-      <input type="email" id="authEmail" placeholder="tu@correo.com" autocomplete="username">
+      <label>Usuario</label>
+      <input type="text" id="authEmail" placeholder="tu.usuario" autocomplete="username">
     </div>
     <div class="auth-field">
       <label>Contraseña</label>
@@ -656,8 +656,8 @@
         <div class="prod-form-fields">
           <div class="form-row">
             <div>
-              <label>Correo del nuevo usuario</label>
-              <input type="email" id="adminNewEmail" placeholder="usuario@correo.com" required>
+              <label>Usuario</label>
+              <input type="text" id="adminNewUsername" placeholder="ygarcia" pattern="[a-zA-Z0-9._-]+" required>
             </div>
             <div>
               <label>Contraseña</label>
@@ -698,6 +698,11 @@ const firebaseConfig = {
   appId: "1:468292887116:web:15ade733eb9de8a0b74ae9"
 };
 const ADMIN_EMAIL = "loviqcr@gmail.com";
+// Firebase Auth solo acepta correos para iniciar sesión, no usuarios sueltos.
+// Para los usuarios no-admin generamos un correo interno a partir de su nombre
+// de usuario (nunca se envía nada ahí) y guardamos el mapeo usuario→correo en
+// Firestore para poder resolverlo antes de iniciar sesión.
+const USERNAME_DOMAIN = "rgtropical.local";
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
@@ -710,19 +715,35 @@ const db = getFirestore(firebaseApp);
 // que Google aplica por defecto a proyectos de cuentas personales — ni el dueño del
 // proyecto puede desactivarla. Ver la auditoría de seguridad para más detalle.
 // Crea un usuario sin cerrar la sesión del admin, vía una app secundaria desechable.
-async function createUserAsAdmin(email, password){
+async function createUserAsAdmin(username, password){
+  const email = username + '@' + USERNAME_DOMAIN;
   const secondaryApp = initializeApp(firebaseConfig, 'Secondary-' + Date.now());
   const secondaryAuth = getAuth(secondaryApp);
   const secondaryDb = getFirestore(secondaryApp);
   try{
     const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
     await setDoc(doc(secondaryDb, 'userDirectory', cred.user.uid), {
-      email, createdAt: new Date().toISOString()
+      username, email, createdAt: new Date().toISOString()
     });
+    await setDoc(doc(secondaryDb, 'usernames', username), { email });
   } finally {
     await signOut(secondaryAuth).catch(()=>{});
     await deleteApp(secondaryApp).catch(()=>{});
   }
+}
+
+// Resuelve lo que se escribió en el campo "usuario" a un correo real de Firebase
+// Auth: si ya parece un correo (el admin), se usa tal cual; si es un nombre de
+// usuario, se busca su correo interno en Firestore.
+async function resolveLoginEmail(input){
+  if(input.includes('@')) return input;
+  const snap = await getDoc(doc(db, 'usernames', input.toLowerCase()));
+  if(!snap.exists()){
+    const err = new Error('Usuario no encontrado');
+    err.code = 'auth/user-not-found';
+    throw err;
+  }
+  return snap.data().email;
 }
 
 (function(){
@@ -794,9 +815,9 @@ async function createUserAsAdmin(email, password){
   function authErrorMessage(e){
     const map = {
       'auth/invalid-email': 'Correo inválido.',
-      'auth/user-not-found': 'No existe una cuenta con ese correo.',
+      'auth/user-not-found': 'No existe una cuenta con ese usuario o correo.',
       'auth/wrong-password': 'Contraseña incorrecta.',
-      'auth/email-already-in-use': 'Ya existe una cuenta con ese correo.',
+      'auth/email-already-in-use': 'Ya existe una cuenta con ese usuario o correo.',
       'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres.',
       'auth/invalid-credential': 'Correo o contraseña incorrectos.',
       'auth/missing-password': 'Escribe una contraseña.'
@@ -807,7 +828,8 @@ async function createUserAsAdmin(email, password){
   document.getElementById('authLoginBtn').addEventListener('click', async ()=>{
     authError.textContent = '';
     try{
-      await signInWithEmailAndPassword(auth, authEmail.value.trim(), authPassword.value);
+      const email = await resolveLoginEmail(authEmail.value.trim().toLowerCase());
+      await signInWithEmailAndPassword(auth, email, authPassword.value);
     }catch(e){ authError.textContent = authErrorMessage(e); }
   });
 
@@ -815,15 +837,19 @@ async function createUserAsAdmin(email, password){
   const adminTabBtn = document.getElementById('adminTabBtn');
   document.getElementById('adminCreateForm').addEventListener('submit', async (e)=>{
     e.preventDefault();
-    const email = document.getElementById('adminNewEmail').value.trim();
+    const username = document.getElementById('adminNewUsername').value.trim().toLowerCase();
     const password = document.getElementById('adminNewPassword').value;
     const errEl = document.getElementById('adminError');
     const okEl = document.getElementById('adminSuccess');
     errEl.textContent = '';
     okEl.textContent = '';
+    if(!/^[a-z0-9._-]+$/.test(username)){
+      errEl.textContent = 'El usuario solo puede tener letras, números, puntos, guiones o guion bajo.';
+      return;
+    }
     try{
-      await createUserAsAdmin(email, password);
-      okEl.textContent = `Usuario ${email} creado correctamente.`;
+      await createUserAsAdmin(username, password);
+      okEl.textContent = `Usuario ${username} creado correctamente.`;
       document.getElementById('adminCreateForm').reset();
       renderUserList();
     }catch(e){ errEl.textContent = authErrorMessage(e); }
@@ -845,7 +871,7 @@ async function createUserAsAdmin(email, password){
       }
       listEl.innerHTML = users.map(u=>`
         <div class="cat-item">
-          <span>${escapeHtml(u.email)}</span>
+          <span>${escapeHtml(u.username || u.email)}</span>
           <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);">${u.createdAt ? new Date(u.createdAt).toLocaleDateString('es-CR') : ''}</span>
         </div>
       `).join('');
