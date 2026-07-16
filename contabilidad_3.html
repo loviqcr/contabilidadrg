@@ -491,6 +491,7 @@
     <button data-tab="movimientos">Movimientos</button>
     <button data-tab="inventario">Inventario</button>
     <button data-tab="categorias">Categorías</button>
+    <button data-tab="comercios">Comercios</button>
     <button data-tab="admin" id="adminTabBtn" style="display:none;">Usuarios</button>
   </nav>
 
@@ -660,6 +661,35 @@
       </div>
     </div>
 
+    <!-- COMERCIOS -->
+    <div class="view" id="view-comercios">
+      <div class="section-title"><span class="num">§1</span> Nuevo comercio</div>
+      <form id="comercioForm" class="prod-form" style="align-items:flex-start;">
+        <div class="prod-form-fields">
+          <div class="form-row three-col">
+            <div>
+              <label>Nombre del comercio</label>
+              <input type="text" id="comercioNombre" placeholder="Ej. Super La Esquina" required>
+            </div>
+            <div>
+              <label>Teléfono</label>
+              <input type="text" id="comercioTelefono" placeholder="8888-8888">
+            </div>
+            <div>
+              <label>Dirección</label>
+              <input type="text" id="comercioDireccion" placeholder="Ej. San José, Escazú">
+            </div>
+          </div>
+          <div class="form-row-actions">
+            <button type="submit" class="btn btn-primary">Agregar comercio</button>
+          </div>
+        </div>
+      </form>
+
+      <div class="section-title"><span class="num">§2</span> Comercios</div>
+      <div class="cat-list" id="comercioList"></div>
+    </div>
+
     <!-- ADMIN -->
     <div class="view" id="view-admin">
       <div class="section-title"><span class="num">§1</span> Crear nuevo usuario</div>
@@ -789,6 +819,7 @@ async function resolveLoginEmail(input){
       bizName: '',
       transactions: [],
       products: [],
+      comercios: [],
       categories: {
         ingreso: ['Ventas','Servicios','Otros ingresos'],
         gasto: ['Suministros','Alquiler','Salarios','Impuestos','Otros gastos']
@@ -1128,6 +1159,80 @@ async function resolveLoginEmail(input){
     });
   }
 
+  // ---------- COMERCIOS ----------
+  document.getElementById('comercioForm').addEventListener('submit', (e)=>{
+    e.preventDefault();
+    const nombre = document.getElementById('comercioNombre').value.trim();
+    const telefono = document.getElementById('comercioTelefono').value.trim();
+    const direccion = document.getElementById('comercioDireccion').value.trim();
+    if(!nombre) return;
+    if(data.comercios.some(c=>c.nombre.toLowerCase()===nombre.toLowerCase())){
+      alert('Ya existe un comercio con ese nombre.');
+      return;
+    }
+    data.comercios.push({ id: uid(), nombre, telefono, direccion });
+    saveData();
+    document.getElementById('comercioForm').reset();
+    renderComercios();
+  });
+
+  function removeComercio(id){
+    const comercio = data.comercios.find(c=>c.id===id);
+    if(!comercio) return;
+    const inUse = data.transactions.some(t=>t.comercio===comercio.nombre);
+    if(inUse){
+      alert('No se puede eliminar: hay ventas registradas a este comercio.');
+      return;
+    }
+    data.comercios = data.comercios.filter(c=>c.id!==id);
+    saveData();
+    renderComercios();
+  }
+
+  function renderComercios(){
+    const listEl = document.getElementById('comercioList');
+    if(data.comercios.length===0){
+      listEl.innerHTML = '<p class="empty-state" style="padding:12px 0;">Sin comercios aún. Agrega el primero arriba.</p>';
+      return;
+    }
+    listEl.innerHTML = data.comercios.map(c=>{
+      const ventas = data.transactions.filter(t=>t.comercio===c.nombre).sort((a,b)=>b.date.localeCompare(a.date));
+      const total = ventas.reduce((s,t)=>s+Number(t.amount),0);
+      return `
+        <div class="cat-item" style="flex-direction:column;align-items:stretch;gap:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span>
+              <strong>${escapeHtml(c.nombre)}</strong><br>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);">${escapeHtml(c.telefono || 'Sin teléfono')} · ${escapeHtml(c.direccion || 'Sin dirección')}</span>
+            </span>
+            <span style="display:flex;align-items:center;gap:10px;">
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--green-ink);font-weight:600;">${fmt(total)}</span>
+              ${ventas.length ? `<button class="btn btn-ghost" data-toggle-hist="${escapeHtml(c.id)}">Ver historial (${ventas.length})</button>` : ''}
+              <button class="btn btn-danger" data-remove-comercio="${escapeHtml(c.id)}">Quitar</button>
+            </span>
+          </div>
+          <div class="comercio-hist" id="comercioHist-${escapeHtml(c.id)}" style="display:none;">
+            <table>
+              <thead><tr><th>Fecha</th><th>Descripción</th><th style="text-align:right">Monto</th></tr></thead>
+              <tbody>
+                ${ventas.map(t=>`<tr><td>${formatDate(t.date)}</td><td>${escapeHtml(t.desc)}</td><td class="amount income">+${fmt(t.amount)}</td></tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }).join('');
+    listEl.querySelectorAll('[data-remove-comercio]').forEach(b=>{
+      b.addEventListener('click', ()=>removeComercio(b.dataset.removeComercio));
+    });
+    listEl.querySelectorAll('[data-toggle-hist]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const hist = document.getElementById('comercioHist-'+b.dataset.toggleHist);
+        hist.style.display = hist.style.display==='none' ? 'block' : 'none';
+      });
+    });
+  }
+
   // ---------- INVENTARIO ----------
   let editingProdId = null;
   let pendingImage = null; // base64 string
@@ -1259,15 +1364,36 @@ async function resolveLoginEmail(input){
     }
   }
 
-  function sellOne(id){
+  // Muestra un selector de comercio en la propia tarjeta del producto antes de
+  // vender (si hay comercios registrados); si no hay ninguno, vende directo.
+  function sellOne(id, btn){
+    if(data.comercios.length===0){ confirmSale(id, ''); return; }
+    const actions = btn.closest('.product-actions');
+    actions.innerHTML = `
+      <select class="sell-comercio-select" style="flex:1;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 8px;border:1px solid var(--paper-line);border-radius:5px;background:#fff;">
+        <option value="">Sin comercio / venta directa</option>
+        ${data.comercios.map(c=>`<option value="${escapeHtml(c.nombre)}">${escapeHtml(c.nombre)}</option>`).join('')}
+      </select>
+      <button class="btn btn-sell" data-confirm-sell="${id}">Confirmar</button>
+      <button class="btn btn-ghost" data-cancel-sell="1">Cancelar</button>
+    `;
+    actions.querySelector('[data-cancel-sell]').addEventListener('click', renderProducts);
+    actions.querySelector('[data-confirm-sell]').addEventListener('click', ()=>{
+      const comercio = actions.querySelector('.sell-comercio-select').value;
+      confirmSale(id, comercio);
+    });
+  }
+
+  function confirmSale(id, comercioNombre){
     const p = data.products.find(p=>p.id===id);
     if(!p) return;
     if(p.stock<=0){ alert('No hay existencias disponibles de este producto.'); return; }
     p.stock -= 1;
     const today = new Date().toISOString().slice(0,10);
+    const desc = comercioNombre ? `Venta de ${p.name} a ${comercioNombre}` : `Venta de ${p.name}`;
     data.transactions.push({
       id: uid(), date: today,
-      type:'ingreso', desc:`Venta de ${p.name}`, cat: p.cat,
+      type:'ingreso', desc, cat: p.cat, comercio: comercioNombre || null,
       qty:1, unitPrice:p.price, amount:p.price
     });
     if(p.cost && p.cost>0){
@@ -1289,6 +1415,7 @@ async function resolveLoginEmail(input){
     renderChart('incomeChart','ingreso');
     renderSummary();
     renderCategories();
+    renderComercios();
   }
 
   function restock(id){
@@ -1339,7 +1466,7 @@ async function resolveLoginEmail(input){
         </div>
       </div>
     `).join('');
-    grid.querySelectorAll('[data-sell]').forEach(b=>b.addEventListener('click', ()=>sellOne(b.dataset.sell)));
+    grid.querySelectorAll('[data-sell]').forEach(b=>b.addEventListener('click', ()=>sellOne(b.dataset.sell, b)));
     grid.querySelectorAll('[data-restock]').forEach(b=>b.addEventListener('click', ()=>restock(b.dataset.restock)));
     grid.querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click', ()=>editProduct(b.dataset.edit)));
     grid.querySelectorAll('[data-del-prod]').forEach(b=>b.addEventListener('click', ()=>deleteProduct(b.dataset.delProd)));
@@ -1494,6 +1621,7 @@ async function resolveLoginEmail(input){
     renderSummary();
     renderCategories();
     renderProducts();
+    renderComercios();
   }
 
   document.getElementById('txDate').valueAsDate = new Date();
