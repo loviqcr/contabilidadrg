@@ -759,6 +759,14 @@ async function updateUserProfile(uid, nombre, telefono){
   await updateDoc(doc(db, 'userDirectory', uid), { nombre, telefono });
 }
 
+// No borra la cuenta de Firebase Auth en sí (eso requiere Admin SDK), pero
+// quita su ficha del directorio y su usuario de login — sin el documento en
+// usernames/, ya no puede iniciar sesión escribiendo su nombre de usuario.
+async function removeUserFromDirectory(uid, username){
+  await deleteDoc(doc(db, 'userDirectory', uid));
+  if(username) await deleteDoc(doc(db, 'usernames', username)).catch(()=>{});
+}
+
 // Resuelve lo que se escribió en el campo "usuario" a un correo real de Firebase
 // Auth: si ya parece un correo (el admin), se usa tal cual; si es un nombre de
 // usuario, se busca su correo interno en Firestore.
@@ -910,6 +918,7 @@ async function resolveLoginEmail(input){
           <span style="display:flex;align-items:center;gap:10px;">
             <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);">${u.createdAt ? new Date(u.createdAt).toLocaleDateString('es-CR') : ''}</span>
             <button class="btn btn-ghost" data-edit-user="${escapeHtml(u.uid)}">Editar</button>
+            <button class="btn btn-danger" data-del-user="${escapeHtml(u.uid)}">Eliminar</button>
           </span>
         </div>
       `).join('');
@@ -935,6 +944,17 @@ async function resolveLoginEmail(input){
               renderUserList();
             }catch(err){ alert('No se pudo guardar: ' + err.message); }
           });
+        });
+      });
+      listEl.querySelectorAll('[data-del-user]').forEach(b=>{
+        b.addEventListener('click', async ()=>{
+          const uid = b.dataset.delUser;
+          const user = users.find(u=>u.uid===uid);
+          if(!confirm(`¿Quitar a ${user.username || user.email} del directorio? Ya no podrá iniciar sesión con su usuario.`)) return;
+          try{
+            await removeUserFromDirectory(uid, user.username);
+            renderUserList();
+          }catch(err){ alert('No se pudo eliminar: ' + err.message); }
         });
       });
     }catch(e){
