@@ -422,14 +422,25 @@
   .btn-sell:hover{background:#194433;}
 
   @media (max-width:760px){
+    .app{padding:16px 12px 40px;}
     .cards{grid-template-columns:1fr;}
-    .form-grid{grid-template-columns:1fr 1fr;}
+    .form-grid{grid-template-columns:1fr;}
+    .form-grid .btn{width:100%;}
     .cat-cols{grid-template-columns:1fr;}
-    header.cover{flex-direction:column;align-items:flex-start;}
+    header.cover{flex-direction:column;align-items:flex-start;padding:20px 18px;}
+    .cover-left{width:100%;}
+    .cover-left > div{min-width:0;}
+    .biz-name{width:100%;}
+    .stamp{align-self:center;}
+    nav.tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;}
+    nav.tabs button{flex-shrink:0;}
+    .page{padding:18px;}
     table{display:block;overflow-x:auto;}
     .prod-form{flex-direction:column;align-items:stretch;}
     .form-row, .form-row.three-col{grid-template-columns:1fr;}
     .product-grid{grid-template-columns:repeat(auto-fill, minmax(140px,1fr));}
+    .filter-bar{flex-direction:column;align-items:stretch;}
+    .filter-bar .spacer{display:none;}
   }
   :focus-visible{outline:2px solid var(--brass);outline-offset:2px;}
 </style>
@@ -1041,15 +1052,26 @@ async function resolveLoginEmail(input){
     });
   }
 
-  const imgDrop = document.getElementById('imgDrop');
+  // Nota: no se agrega un click() manual en imgDrop — el <label> ya abre el
+  // input nativamente, y duplicarlo hace que en varios navegadores móviles el
+  // selector de fotos se abra dos veces o el evento "change" no dispare bien.
   const prodImageInput = document.getElementById('prodImage');
-  imgDrop.addEventListener('click', ()=> prodImageInput.click());
   prodImageInput.addEventListener('change', (e)=>{
     const file = e.target.files[0];
     if(!file) return;
+    const dropLabel = document.getElementById('imgDropLabel');
+    dropLabel.textContent = 'Procesando...';
     const reader = new FileReader();
+    reader.onerror = ()=>{
+      alert('No se pudo leer la foto. Intenta con otra imagen.');
+      dropLabel.textContent = '+ Foto';
+    };
     reader.onload = (ev)=>{
       const img = new Image();
+      img.onerror = ()=>{
+        alert('Ese archivo no se pudo abrir como imagen (formato no compatible). Prueba tomando la foto de nuevo o eligiendo otra.');
+        dropLabel.textContent = '+ Foto';
+      };
       img.onload = ()=>{
         // resize/compress to keep storage light
         const maxDim = 400;
@@ -1063,7 +1085,7 @@ async function resolveLoginEmail(input){
         const preview = document.getElementById('imgPreview');
         preview.src = pendingImage;
         preview.style.display = 'block';
-        document.getElementById('imgDropLabel').style.display = 'none';
+        dropLabel.style.display = 'none';
       };
       img.src = ev.target.result;
     };
