@@ -170,6 +170,36 @@
   }
   nav.tabs button:not(.active):hover{background:rgba(250,246,234,0.22);}
 
+  /* SUBTABS (Deudas) */
+  .subtabs{display:inline-flex;background:var(--green-light);border-radius:20px;padding:3px;margin-bottom:20px;}
+  .subtabs button{
+    border:none;background:transparent;padding:8px 22px;border-radius:16px;
+    font-family:'IBM Plex Mono',monospace;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;
+    cursor:pointer;color:var(--ink-soft);transition:.15s;
+  }
+  .subtabs button.active{background:#fff;color:var(--ink);box-shadow:0 1px 4px rgba(15,40,31,0.15);font-weight:600;}
+  .deuda-group{
+    background:#fff;border:1px solid var(--paper-line);border-radius:8px;
+    padding:14px 16px;margin-bottom:10px;
+  }
+  .deuda-group-head{display:flex;justify-content:space-between;align-items:center;cursor:pointer;gap:12px;}
+  .deuda-group-head .name{font-family:'Spectral',serif;font-weight:600;font-size:15px;}
+  .deuda-group-head .date{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);}
+  .deuda-group-head .amount{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:15px;color:var(--red);}
+  .deuda-group.cobrar .deuda-group-head .amount{color:var(--green-ink);}
+  .deuda-count{
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;background:var(--red-light);color:var(--red);
+    border-radius:20px;padding:2px 8px;flex-shrink:0;
+  }
+  .deuda-group.cobrar .deuda-count{background:var(--green-light);color:var(--green-ink);}
+  .deuda-items{display:none;margin-top:12px;flex-direction:column;gap:8px;}
+  .deuda-items.open{display:flex;}
+  .deuda-item{
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:8px 10px;background:var(--paper);border-radius:6px;font-size:12.5px;
+  }
+  .deuda-item .meta{color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;font-size:10.5px;}
+
   /* PAGE */
   .page{
     background:var(--paper);
@@ -492,6 +522,7 @@
     <button data-tab="inventario">Inventario</button>
     <button data-tab="categorias">Categorías</button>
     <button data-tab="comercios">Comercios</button>
+    <button data-tab="deudas">Deudas</button>
     <button data-tab="admin" id="adminTabBtn" style="display:none;">Usuarios</button>
   </nav>
 
@@ -690,6 +721,67 @@
       <div class="cat-list" id="comercioList"></div>
     </div>
 
+    <!-- DEUDAS -->
+    <div class="view" id="view-deudas">
+      <div class="subtabs">
+        <button class="active" data-subtab="cobrar">Por cobrar</button>
+        <button data-subtab="pagar">Por pagar</button>
+      </div>
+
+      <div class="cards" style="grid-template-columns:1fr 1fr;">
+        <div class="card">
+          <div class="label" id="deudaTotalLabel">Total por cobrar</div>
+          <div class="value" id="deudaTotal">₡0.00</div>
+        </div>
+        <div class="card balance">
+          <div class="label" id="deudaContrapartesLabel">Comercios con saldo</div>
+          <div class="value" id="deudaContrapartes">0</div>
+        </div>
+      </div>
+
+      <!-- Solo visible en "Por pagar" -->
+      <div id="deudaPagarExtra" style="display:none;">
+        <div class="section-title"><span class="num">§</span> Nueva deuda por pagar</div>
+        <form id="nuevaDeudaForm" class="prod-form" style="align-items:flex-start;">
+          <div class="prod-form-fields">
+            <div class="form-row three-col">
+              <div>
+                <label>Proveedor</label>
+                <select id="deudaProveedorSelect"></select>
+              </div>
+              <div>
+                <label>Descripción</label>
+                <input type="text" id="deudaDesc" placeholder="Ej. Compra de insumos">
+              </div>
+              <div>
+                <label>Categoría</label>
+                <select id="deudaCat"></select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div>
+                <label>Monto (₡)</label>
+                <input type="number" id="deudaMonto" step="0.01" min="0" placeholder="0.00">
+              </div>
+              <div>
+                <label>Fecha</label>
+                <input type="date" id="deudaFecha">
+              </div>
+            </div>
+            <div class="form-row-actions">
+              <button type="submit" class="btn btn-primary">Agregar deuda</button>
+            </div>
+          </div>
+        </form>
+        <div class="cat-add" style="margin-bottom:24px;">
+          <input type="text" id="newProveedorNombre" placeholder="Nombre de nuevo proveedor">
+          <button class="btn btn-ghost" id="addProveedorBtn">+ Proveedor</button>
+        </div>
+      </div>
+
+      <div id="deudaList"></div>
+    </div>
+
     <!-- ADMIN -->
     <div class="view" id="view-admin">
       <div class="section-title"><span class="num">§1</span> Crear nuevo usuario</div>
@@ -820,6 +912,8 @@ async function resolveLoginEmail(input){
       transactions: [],
       products: [],
       comercios: [],
+      proveedores: [],
+      deudas: [],
       categories: {
         ingreso: ['Ventas','Servicios','Otros ingresos'],
         gasto: ['Suministros','Alquiler','Salarios','Impuestos','Otros gastos']
@@ -1179,9 +1273,10 @@ async function resolveLoginEmail(input){
   function removeComercio(id){
     const comercio = data.comercios.find(c=>c.id===id);
     if(!comercio) return;
-    const inUse = data.transactions.some(t=>t.comercio===comercio.nombre);
+    const inUse = data.transactions.some(t=>t.comercio===comercio.nombre)
+      || data.deudas.some(d=>d.contraparte===comercio.nombre);
     if(inUse){
-      alert('No se puede eliminar: hay ventas registradas a este comercio.');
+      alert('No se puede eliminar: hay ventas o deudas registradas con este comercio.');
       return;
     }
     data.comercios = data.comercios.filter(c=>c.id!==id);
@@ -1229,6 +1324,162 @@ async function resolveLoginEmail(input){
       b.addEventListener('click', ()=>{
         const hist = document.getElementById('comercioHist-'+b.dataset.toggleHist);
         hist.style.display = hist.style.display==='none' ? 'block' : 'none';
+      });
+    });
+  }
+
+  // ---------- DEUDAS (por cobrar / por pagar) ----------
+  let deudaSubtab = 'cobrar';
+
+  document.querySelectorAll('.subtabs [data-subtab]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      deudaSubtab = btn.dataset.subtab;
+      document.querySelectorAll('.subtabs [data-subtab]').forEach(b=>b.classList.toggle('active', b===btn));
+      document.getElementById('deudaPagarExtra').style.display = deudaSubtab==='pagar' ? 'block' : 'none';
+      if(deudaSubtab==='pagar'){ populateProveedorSelect(); populateDeudaCatSelect(); }
+      renderDeudas();
+    });
+  });
+
+  function populateProveedorSelect(){
+    const sel = document.getElementById('deudaProveedorSelect');
+    sel.innerHTML = data.proveedores.map(p=>`<option value="${escapeHtml(p.nombre)}">${escapeHtml(p.nombre)}</option>`).join('')
+      || '<option value="">Sin proveedores — agrega uno abajo</option>';
+  }
+
+  function populateDeudaCatSelect(){
+    const sel = document.getElementById('deudaCat');
+    sel.innerHTML = data.categories.gasto.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  }
+
+  document.getElementById('addProveedorBtn').addEventListener('click', ()=>{
+    const input = document.getElementById('newProveedorNombre');
+    const nombre = input.value.trim();
+    if(!nombre) return;
+    if(data.proveedores.some(p=>p.nombre.toLowerCase()===nombre.toLowerCase())){
+      alert('Ya existe un proveedor con ese nombre.');
+      return;
+    }
+    data.proveedores.push({ id: uid(), nombre });
+    saveData();
+    input.value = '';
+    populateProveedorSelect();
+  });
+
+  document.getElementById('nuevaDeudaForm').addEventListener('submit', (e)=>{
+    e.preventDefault();
+    const contraparte = document.getElementById('deudaProveedorSelect').value;
+    const desc = document.getElementById('deudaDesc').value.trim();
+    const cat = document.getElementById('deudaCat').value;
+    const monto = parseFloat(document.getElementById('deudaMonto').value);
+    const fecha = document.getElementById('deudaFecha').value || new Date().toISOString().slice(0,10);
+    if(!contraparte){ alert('Agrega o elige un proveedor primero.'); return; }
+    if(!desc || isNaN(monto) || monto<=0) return;
+    data.deudas.push({ id: uid(), tipo:'pagar', contraparte, desc, cat, monto, date: fecha, pagado:false });
+    saveData();
+    document.getElementById('nuevaDeudaForm').reset();
+    renderDeudas();
+  });
+
+  function markDeudaPagada(id){
+    const d = data.deudas.find(d=>d.id===id);
+    if(!d) return;
+    if(!confirm(`¿Marcar como pagada la deuda de ${fmt(d.monto)} con ${d.contraparte}?`)) return;
+    const today = new Date().toISOString().slice(0,10);
+    if(d.tipo==='cobrar'){
+      data.transactions.push({
+        id: uid(), date: today, type:'ingreso', desc: d.desc, cat: d.cat,
+        comercio: d.contraparte, qty:1, unitPrice:d.monto, amount:d.monto
+      });
+    } else {
+      data.transactions.push({
+        id: uid(), date: today, type:'gasto', desc: d.desc, cat: d.cat,
+        qty:1, unitPrice:d.monto, amount:d.monto
+      });
+    }
+    d.pagado = true;
+    d.fechaPago = today;
+    saveData();
+    render();
+  }
+
+  function renderDeudas(){
+    const totalEl = document.getElementById('deudaTotal');
+    const totalLabelEl = document.getElementById('deudaTotalLabel');
+    const contrapartesEl = document.getElementById('deudaContrapartes');
+    const contrapartesLabelEl = document.getElementById('deudaContrapartesLabel');
+    const listEl = document.getElementById('deudaList');
+
+    const pendientes = data.deudas.filter(d=>d.tipo===deudaSubtab && !d.pagado);
+    const total = pendientes.reduce((s,d)=>s+Number(d.monto),0);
+    const contraparteLabel = deudaSubtab==='cobrar' ? 'comercios' : 'proveedores';
+
+    totalLabelEl.textContent = deudaSubtab==='cobrar' ? 'Total por cobrar' : 'Total por pagar';
+    totalEl.textContent = fmt(total);
+    totalEl.style.color = deudaSubtab==='cobrar' ? 'var(--green-ink)' : 'var(--red)';
+    contrapartesLabelEl.textContent = `${contraparteLabel[0].toUpperCase()}${contraparteLabel.slice(1)} con saldo`;
+
+    const groups = {};
+    pendientes.forEach(d=>{
+      if(!groups[d.contraparte]) groups[d.contraparte] = [];
+      groups[d.contraparte].push(d);
+    });
+    const groupNames = Object.keys(groups).sort((a,b)=>{
+      const lastA = groups[a].reduce((m,d)=>d.date>m?d.date:m, '');
+      const lastB = groups[b].reduce((m,d)=>d.date>m?d.date:m, '');
+      return lastB.localeCompare(lastA);
+    });
+    contrapartesEl.textContent = groupNames.length;
+
+    if(groupNames.length===0){
+      listEl.innerHTML = `<p class="empty-state" style="padding:30px 0;">Sin deudas ${deudaSubtab==='cobrar'?'por cobrar':'por pagar'} pendientes.</p>`;
+      return;
+    }
+
+    listEl.innerHTML = groupNames.map(name=>{
+      const items = groups[name].sort((a,b)=>b.date.localeCompare(a.date));
+      const subtotal = items.reduce((s,d)=>s+Number(d.monto),0);
+      const lastDate = items[0].date;
+      return `
+        <div class="deuda-group ${deudaSubtab}">
+          <div class="deuda-group-head" data-toggle-group="${escapeHtml(name)}">
+            <span>
+              <span class="name">${escapeHtml(name)}</span><br>
+              <span class="date">${formatDate(lastDate)}</span>
+            </span>
+            <span style="display:flex;align-items:center;gap:10px;">
+              <span class="amount">${fmt(subtotal)}</span>
+              <span class="deuda-count">${items.length}</span>
+            </span>
+          </div>
+          <div class="deuda-items" id="deudaGroup-${escapeHtml(name)}">
+            ${items.map(d=>`
+              <div class="deuda-item">
+                <span>
+                  ${escapeHtml(d.desc)}<br>
+                  <span class="meta">${formatDate(d.date)} · ${escapeHtml(d.cat)}</span>
+                </span>
+                <span style="display:flex;align-items:center;gap:8px;">
+                  <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;">${fmt(d.monto)}</span>
+                  <button class="btn btn-primary" style="padding:5px 10px;font-size:10.5px;" data-pagar-deuda="${escapeHtml(d.id)}">Marcar pagada</button>
+                </span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    listEl.querySelectorAll('[data-toggle-group]').forEach(head=>{
+      head.addEventListener('click', ()=>{
+        const group = document.getElementById('deudaGroup-'+head.dataset.toggleGroup);
+        group.classList.toggle('open');
+      });
+    });
+    listEl.querySelectorAll('[data-pagar-deuda]').forEach(b=>{
+      b.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        markDeudaPagada(b.dataset.pagarDeuda);
       });
     });
   }
@@ -1376,6 +1627,9 @@ async function resolveLoginEmail(input){
           <option value="">Sin comercio / venta directa</option>
           ${data.comercios.map(c=>`<option value="${escapeHtml(c.nombre)}">${escapeHtml(c.nombre)}</option>`).join('')}
         </select>
+        <label style="display:flex;align-items:center;gap:4px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-soft);white-space:nowrap;">
+          <input type="checkbox" class="sell-credito-check"> A crédito
+        </label>
       ` : ''}
       <button class="btn btn-sell" data-confirm-sell="${id}">Confirmar</button>
       <button class="btn btn-ghost" data-cancel-sell="1">Cancelar</button>
@@ -1385,12 +1639,15 @@ async function resolveLoginEmail(input){
       const qty = parseInt(actions.querySelector('.sell-qty-input').value, 10);
       const comercioSelect = actions.querySelector('.sell-comercio-select');
       const comercio = comercioSelect ? comercioSelect.value : '';
+      const creditoCheck = actions.querySelector('.sell-credito-check');
+      const aCredito = creditoCheck ? creditoCheck.checked : false;
       if(!qty || qty<=0){ alert('Escribe una cantidad válida.'); return; }
-      confirmSale(id, comercio, qty);
+      if(aCredito && !comercio){ alert('Elige un comercio para vender a crédito.'); return; }
+      confirmSale(id, comercio, qty, aCredito);
     });
   }
 
-  function confirmSale(id, comercioNombre, qty){
+  function confirmSale(id, comercioNombre, qty, aCredito){
     const p = data.products.find(p=>p.id===id);
     if(!p) return;
     if(qty>p.stock){ alert(`Solo hay ${p.stock} en existencia.`); return; }
@@ -1398,11 +1655,19 @@ async function resolveLoginEmail(input){
     const today = new Date().toISOString().slice(0,10);
     const qtyLabel = qty>1 ? `${qty} ` : '';
     const desc = comercioNombre ? `Venta de ${qtyLabel}${p.name} a ${comercioNombre}` : `Venta de ${qtyLabel}${p.name}`;
-    data.transactions.push({
-      id: uid(), date: today,
-      type:'ingreso', desc, cat: p.cat, comercio: comercioNombre || null,
-      qty, unitPrice:p.price, amount:p.price*qty
-    });
+    const amount = p.price*qty;
+    if(aCredito){
+      data.deudas.push({
+        id: uid(), tipo:'cobrar', contraparte: comercioNombre, desc, cat: p.cat,
+        monto: amount, date: today, pagado:false
+      });
+    } else {
+      data.transactions.push({
+        id: uid(), date: today,
+        type:'ingreso', desc, cat: p.cat, comercio: comercioNombre || null,
+        qty, unitPrice:p.price, amount
+      });
+    }
     if(p.cost && p.cost>0){
       ensureCogsCategory();
       data.transactions.push({
@@ -1423,6 +1688,7 @@ async function resolveLoginEmail(input){
     renderSummary();
     renderCategories();
     renderComercios();
+    renderDeudas();
   }
 
   function restock(id){
@@ -1629,9 +1895,11 @@ async function resolveLoginEmail(input){
     renderCategories();
     renderProducts();
     renderComercios();
+    renderDeudas();
   }
 
   document.getElementById('txDate').valueAsDate = new Date();
+  document.getElementById('deudaFecha').valueAsDate = new Date();
 })();
 </script>
 </body>
