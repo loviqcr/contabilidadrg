@@ -662,6 +662,20 @@
       </form>
 
       <div class="section-title"><span class="num">§2</span> Productos</div>
+      <div class="cards" style="grid-template-columns:1fr 1fr 1fr;">
+        <div class="card income">
+          <div class="label">Valor de venta (referencia)</div>
+          <div class="value" id="invValorVenta">₡0.00</div>
+        </div>
+        <div class="card expense">
+          <div class="label">Costo total</div>
+          <div class="value" id="invValorCosto">₡0.00</div>
+        </div>
+        <div class="card balance">
+          <div class="label">Productos</div>
+          <div class="value" id="invProductCount">0</div>
+        </div>
+      </div>
       <div class="filter-bar">
         <input type="text" id="prodSearch" placeholder="Buscar producto...">
         <div class="spacer"></div>
@@ -1708,6 +1722,13 @@ async function resolveLoginEmail(input){
     const search = document.getElementById('prodSearch').value.toLowerCase();
     const grid = document.getElementById('productGrid');
     const list = data.products.filter(p=>p.name.toLowerCase().includes(search));
+
+    const valorVenta = data.products.reduce((s,p)=>s+p.price*p.stock,0);
+    const valorCosto = data.products.reduce((s,p)=>s+(p.cost||0)*p.stock,0);
+    document.getElementById('invValorVenta').textContent = fmt(valorVenta);
+    document.getElementById('invValorCosto').textContent = fmt(valorCosto);
+    document.getElementById('invProductCount').textContent = data.products.length;
+
     if(list.length===0){
       grid.innerHTML = `<p class="empty-state" style="grid-column:1/-1;padding:30px 0;">Aún no hay productos en el inventario. Agrega el primero arriba.</p>`;
       return;
@@ -1727,6 +1748,10 @@ async function resolveLoginEmail(input){
           <div class="product-cost-row">
             <span>Costo: ${fmt(p.cost||0)}</span>
             <span class="margin ${(p.price-(p.cost||0))<0?'neg':''}">Margen: ${fmt(p.price-(p.cost||0))}</span>
+          </div>
+          <div class="product-cost-row">
+            <span>Total venta: ${fmt(p.price*p.stock)}</span>
+            <span>Total costo: ${fmt((p.cost||0)*p.stock)}</span>
           </div>
           <div class="product-actions">
             <button class="btn btn-sell" data-sell="${p.id}">Vender</button>
