@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "loviqcr.twa",
+        "sha256_cert_fingerprints": ["E7:18:78:17:3B:91:FD:8B:EE:0F:3A:83:82:A3:00:CD:1A:93:F6:58:53:C3:31:1A:F5:0B:E4:C7:8C:11:73:34"]
+      }
+    }]
