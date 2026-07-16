@@ -231,6 +231,7 @@
 
   /* SUMMARY CARDS */
   .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px;}
+  .cards.cards-2{grid-template-columns:1fr 1fr;}
   .card{
     background:#fff;
     border:1px solid var(--paper-line);
@@ -453,6 +454,7 @@
 
   @media (max-width:760px){
     .app{padding:16px 12px 40px;}
+    .cards.cards-2{grid-template-columns:1fr;}
     .cards{grid-template-columns:1fr;}
     .form-grid{grid-template-columns:1fr;}
     .form-grid .btn{width:100%;}
@@ -662,7 +664,7 @@
       </form>
 
       <div class="section-title"><span class="num">§2</span> Productos</div>
-      <div class="cards" style="grid-template-columns:1fr 1fr 1fr;">
+      <div class="cards">
         <div class="card income">
           <div class="label">Valor de venta (referencia)</div>
           <div class="value" id="invValorVenta">₡0.00</div>
@@ -742,7 +744,7 @@
         <button data-subtab="pagar">Por pagar</button>
       </div>
 
-      <div class="cards" style="grid-template-columns:1fr 1fr;">
+      <div class="cards cards-2">
         <div class="card">
           <div class="label" id="deudaTotalLabel">Total por cobrar</div>
           <div class="value" id="deudaTotal">₡0.00</div>
