@@ -798,16 +798,18 @@ async function resolveLoginEmail(input){
 
   let data = defaultData();
 
+  // Un solo libro contable compartido entre todos los usuarios del negocio,
+  // no uno por cuenta — cualquiera con acceso ve y edita lo mismo.
   function userDocRef(){
-    return doc(db, 'users', currentUser.uid);
+    return doc(db, 'business', 'shared');
   }
 
-  // Cada producto vive en su propio documento (users/{uid}/products/{id}) en vez
-  // de un array dentro del documento principal — un solo documento de Firestore
-  // tiene un límite de 1MB, y unas pocas fotos ahí lo llenaban y hacían fallar
-  // el guardado en silencio.
+  // Cada producto vive en su propio documento (business/shared/products/{id})
+  // en vez de un array dentro del documento principal — un solo documento de
+  // Firestore tiene un límite de 1MB, y unas pocas fotos ahí lo llenaban y
+  // hacían fallar el guardado en silencio.
   function productsColRef(){
-    return collection(db, 'users', currentUser.uid, 'products');
+    return collection(db, 'business', 'shared', 'products');
   }
 
   async function saveProduct(product){
@@ -818,10 +820,27 @@ async function resolveLoginEmail(input){
     await deleteDoc(doc(productsColRef(), id));
   }
 
+  // Migración de una sola vez: si el libro compartido todavía no existe pero
+  // esta cuenta tenía datos guardados de cuando cada usuario tenía su propio
+  // libro, los copia al libro compartido para no perderlos de vista.
+  async function migrateToSharedIfNeeded(sharedSnap){
+    if(sharedSnap.exists()) return false;
+    const oldSnap = await getDoc(doc(db, 'users', currentUser.uid));
+    if(!oldSnap.exists()) return false;
+    const { products: oldProducts, ...oldMainData } = oldSnap.data();
+    await setDoc(userDocRef(), oldMainData);
+    const oldProdSnap = await getDocs(collection(db, 'users', currentUser.uid, 'products'));
+    for(const d of oldProdSnap.docs){
+      await saveProduct({ id: d.id, ...d.data() });
+    }
+    return true;
+  }
+
   async function loadData(){
     data = defaultData();
     try{
-      const snap = await getDoc(userDocRef());
+      let snap = await getDoc(userDocRef());
+      if(await migrateToSharedIfNeeded(snap)) snap = await getDoc(userDocRef());
       if(snap.exists()) data = { ...defaultData(), ...snap.data() };
       const prodSnap = await getDocs(productsColRef());
       data.products = [];

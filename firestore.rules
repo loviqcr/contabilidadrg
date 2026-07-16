@@ -3,9 +3,18 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Cada usuario solo puede leer/escribir su propio libro contable,
-    // incluida su subcolección de productos (cada producto es su propio
-    // documento para no toparse con el límite de 1MB por documento).
+    // Libro contable único, compartido por todos los usuarios del negocio
+    // (admin y empleados) — cualquiera con una cuenta ve y edita lo mismo.
+    match /business/{docId} {
+      allow read, write: if request.auth != null;
+
+      match /products/{productId} {
+        allow read, write: if request.auth != null;
+      }
+    }
+
+    // Modelo anterior (un libro por usuario). Se deja solo para que la
+    // migración de una sola vez pueda leer los datos viejos del admin.
     match /users/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
 
