@@ -675,6 +675,16 @@
               <input type="text" id="adminNewPassword" placeholder="Mínimo 6 caracteres" required>
             </div>
           </div>
+          <div class="form-row">
+            <div>
+              <label>Nombre completo</label>
+              <input type="text" id="adminNewNombre" placeholder="Yordi García">
+            </div>
+            <div>
+              <label>Teléfono</label>
+              <input type="text" id="adminNewTelefono" placeholder="8888-8888">
+            </div>
+          </div>
           <p class="auth-error" id="adminError"></p>
           <p style="color:var(--green-ink);font-family:'IBM Plex Mono',monospace;font-size:12.5px;margin:0;" id="adminSuccess"></p>
           <div class="form-row-actions">
@@ -698,7 +708,7 @@ import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, signOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDs4nbxNMMrDOy5Mvr0zPaR-iWAF3LFFtQ",
@@ -726,7 +736,7 @@ const db = getFirestore(firebaseApp);
 // que Google aplica por defecto a proyectos de cuentas personales — ni el dueño del
 // proyecto puede desactivarla. Ver la auditoría de seguridad para más detalle.
 // Crea un usuario sin cerrar la sesión del admin, vía una app secundaria desechable.
-async function createUserAsAdmin(username, password){
+async function createUserAsAdmin(username, password, nombre, telefono){
   const email = username + '@' + USERNAME_DOMAIN;
   const secondaryApp = initializeApp(firebaseConfig, 'Secondary-' + Date.now());
   const secondaryAuth = getAuth(secondaryApp);
@@ -734,13 +744,19 @@ async function createUserAsAdmin(username, password){
   try{
     const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
     await setDoc(doc(secondaryDb, 'userDirectory', cred.user.uid), {
-      username, email, createdAt: new Date().toISOString()
+      username, email, nombre: nombre || '', telefono: telefono || '', createdAt: new Date().toISOString()
     });
     await setDoc(doc(secondaryDb, 'usernames', username), { email });
   } finally {
     await signOut(secondaryAuth).catch(()=>{});
     await deleteApp(secondaryApp).catch(()=>{});
   }
+}
+
+// El admin sí puede editar estos campos de perfil (no son la cuenta de login en
+// sí) porque son solo un documento de Firestore, sin tocar Authentication.
+async function updateUserProfile(uid, nombre, telefono){
+  await updateDoc(doc(db, 'userDirectory', uid), { nombre, telefono });
 }
 
 // Resuelve lo que se escribió en el campo "usuario" a un correo real de Firebase
@@ -850,6 +866,8 @@ async function resolveLoginEmail(input){
     e.preventDefault();
     const username = document.getElementById('adminNewUsername').value.trim().toLowerCase();
     const password = document.getElementById('adminNewPassword').value;
+    const nombre = document.getElementById('adminNewNombre').value.trim();
+    const telefono = document.getElementById('adminNewTelefono').value.trim();
     const errEl = document.getElementById('adminError');
     const okEl = document.getElementById('adminSuccess');
     errEl.textContent = '';
@@ -859,33 +877,66 @@ async function resolveLoginEmail(input){
       return;
     }
     try{
-      await createUserAsAdmin(username, password);
+      await createUserAsAdmin(username, password, nombre, telefono);
       okEl.textContent = `Usuario ${username} creado correctamente.`;
       document.getElementById('adminCreateForm').reset();
       renderUserList();
     }catch(e){ errEl.textContent = authErrorMessage(e); }
   });
 
-  // Sin un backend con Admin SDK, Firebase no permite editar ni eliminar cuentas
-  // ajenas desde el cliente — este directorio es solo lectura por esa razón.
+  // Sin un backend con Admin SDK, Firebase no permite editar ni eliminar la
+  // cuenta de login (usuario/contraseña) ajena desde el cliente. Nombre y
+  // teléfono sí, porque son solo campos de un documento de Firestore.
   async function renderUserList(){
     const listEl = document.getElementById('adminUserList');
     listEl.innerHTML = '<p class="empty-state" style="padding:12px 0;">Cargando...</p>';
     try{
       const snap = await getDocs(collection(db, 'userDirectory'));
       const users = [];
-      snap.forEach(d=>users.push(d.data()));
+      snap.forEach(d=>users.push({ uid: d.id, ...d.data() }));
       users.sort((a,b)=> (a.createdAt||'').localeCompare(b.createdAt||''));
       if(users.length===0){
         listEl.innerHTML = '<p class="empty-state" style="padding:12px 0;">Sin usuarios registrados aún</p>';
         return;
       }
       listEl.innerHTML = users.map(u=>`
-        <div class="cat-item">
-          <span>${escapeHtml(u.username || u.email)}</span>
-          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);">${u.createdAt ? new Date(u.createdAt).toLocaleDateString('es-CR') : ''}</span>
+        <div class="cat-item" style="align-items:flex-start;">
+          <span>
+            <strong>${escapeHtml(u.username || u.email)}</strong><br>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);">
+              ${escapeHtml(u.nombre || 'Sin nombre')} · ${escapeHtml(u.telefono || 'Sin teléfono')}
+            </span>
+          </span>
+          <span style="display:flex;align-items:center;gap:10px;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);">${u.createdAt ? new Date(u.createdAt).toLocaleDateString('es-CR') : ''}</span>
+            <button class="btn btn-ghost" data-edit-user="${escapeHtml(u.uid)}">Editar</button>
+          </span>
         </div>
       `).join('');
+      listEl.querySelectorAll('[data-edit-user]').forEach(b=>{
+        b.addEventListener('click', ()=>{
+          const uid = b.dataset.editUser;
+          const user = users.find(u=>u.uid===uid);
+          const row = b.closest('.cat-item');
+          row.innerHTML = `
+            <div style="display:flex;gap:8px;flex:1;flex-wrap:wrap;align-items:center;">
+              <input type="text" class="edit-user-nombre" value="${escapeHtml(user.nombre || '')}" placeholder="Nombre completo" style="flex:1;min-width:140px;padding:7px 9px;border:1px solid var(--paper-line);border-radius:6px;font-family:'Inter',sans-serif;font-size:13px;">
+              <input type="text" class="edit-user-telefono" value="${escapeHtml(user.telefono || '')}" placeholder="Teléfono" style="flex:1;min-width:120px;padding:7px 9px;border:1px solid var(--paper-line);border-radius:6px;font-family:'Inter',sans-serif;font-size:13px;">
+              <button class="btn btn-primary" data-save-user="1">Guardar</button>
+              <button class="btn btn-ghost" data-cancel-edit-user="1">Cancelar</button>
+            </div>
+          `;
+          row.querySelector('[data-cancel-edit-user]').addEventListener('click', renderUserList);
+          row.querySelector('[data-save-user]').addEventListener('click', async ()=>{
+            const nombre = row.querySelector('.edit-user-nombre').value.trim();
+            const telefono = row.querySelector('.edit-user-telefono').value.trim();
+            try{
+              await updateUserProfile(uid, nombre, telefono);
+              renderUserList();
+            }catch(err){ alert('No se pudo guardar: ' + err.message); }
+          });
+        });
+      });
     }catch(e){
       listEl.innerHTML = `<p class="empty-state" style="padding:12px 0;">Error cargando usuarios: ${escapeHtml(e.message)}</p>`;
     }
