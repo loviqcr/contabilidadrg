@@ -799,10 +799,11 @@
             </div>
           </div>
         </form>
-        <div class="cat-add" style="margin-bottom:24px;">
+        <div class="cat-add" style="margin-bottom:12px;">
           <input type="text" id="newProveedorNombre" placeholder="Nombre de nuevo proveedor">
           <button class="btn btn-primary" id="addProveedorBtn">+ Proveedor</button>
         </div>
+        <div class="cat-list" id="proveedorList" style="margin-bottom:24px;"></div>
       </div>
 
       <div id="deudaList"></div>
@@ -1374,6 +1375,35 @@ async function resolveLoginEmail(input){
     const sel = document.getElementById('deudaProveedorSelect');
     sel.innerHTML = data.proveedores.map(p=>`<option value="${escapeHtml(p.nombre)}">${escapeHtml(p.nombre)}</option>`).join('')
       || '<option value="">Sin proveedores — agrega uno abajo</option>';
+    renderProveedores();
+  }
+
+  function renderProveedores(){
+    const listEl = document.getElementById('proveedorList');
+    if(data.proveedores.length===0){
+      listEl.innerHTML = '<p class="empty-state" style="padding:12px 0;">Sin proveedores aún.</p>';
+      return;
+    }
+    listEl.innerHTML = data.proveedores.map(p=>
+      `<div class="cat-item"><span>${escapeHtml(p.nombre)}</span><button class="btn btn-danger" data-remove-proveedor="${escapeHtml(p.id)}">Quitar</button></div>`
+    ).join('');
+    listEl.querySelectorAll('[data-remove-proveedor]').forEach(b=>{
+      b.addEventListener('click', ()=>removeProveedor(b.dataset.removeProveedor));
+    });
+  }
+
+  function removeProveedor(id){
+    const proveedor = data.proveedores.find(p=>p.id===id);
+    if(!proveedor) return;
+    const deudasPend = data.deudas.filter(d=>d.contraparte===proveedor.nombre && d.tipo==='pagar' && !d.pagado);
+    if(deudasPend.length){
+      alert('No se puede eliminar. Deudas pendientes con este proveedor:\n' +
+        deudasPend.map(d=>`"${d.desc}" (${d.date}) - ${fmt(d.monto)}`).join('\n'));
+      return;
+    }
+    data.proveedores = data.proveedores.filter(p=>p.id!==id);
+    saveData();
+    populateProveedorSelect();
   }
 
   function populateDeudaCatSelect(){
