@@ -1,4 +1,4 @@
-const CACHE_NAME = 'libro-contable-v1';
+const CACHE_NAME = 'libro-contable-v2';
 const SHELL = ['./', './index.html', './contabilidad_3.html', './manifest.json', './icon-192.png', './icon-512.png', './logo.jpg'];
 
 self.addEventListener('install', (e) => {

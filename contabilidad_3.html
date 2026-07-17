@@ -1293,10 +1293,13 @@ async function resolveLoginEmail(input){
   function removeComercio(id){
     const comercio = data.comercios.find(c=>c.id===id);
     if(!comercio) return;
-    const inUse = data.transactions.some(t=>t.comercio===comercio.nombre)
-      || data.deudas.some(d=>d.contraparte===comercio.nombre);
-    if(inUse){
-      alert('No se puede eliminar: hay ventas o deudas registradas con este comercio.');
+    const ventas = data.transactions.filter(t=>t.comercio===comercio.nombre);
+    const deudasPend = data.deudas.filter(d=>d.contraparte===comercio.nombre && !d.pagado);
+    if(ventas.length || deudasPend.length){
+      const detalle = [];
+      if(ventas.length) detalle.push(`${ventas.length} venta(s): ` + ventas.map(t=>`"${t.desc}" (${t.date})`).join(', '));
+      if(deudasPend.length) detalle.push(`${deudasPend.length} deuda(s) pendiente(s): ` + deudasPend.map(d=>`"${d.desc}" (${d.date})`).join(', '));
+      alert('No se puede eliminar. Referencias encontradas:\n' + detalle.join('\n'));
       return;
     }
     data.comercios = data.comercios.filter(c=>c.id!==id);
