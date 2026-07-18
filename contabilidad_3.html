@@ -2555,7 +2555,7 @@ async function resolveLoginEmail(input){
           <span class="tx-date-display">${formatDate(t.date)}</span>
           <button class="btn btn-ghost" style="padding:2px 6px;font-size:10px;margin-left:4px;" data-edit-date="${t.id}">✎</button>
         </td>
-        <td>${escapeHtml(t.desc)}</td>
+        <td>${escapeHtml(t.desc)}${t.comercio ? `<br><span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-soft);">→ ${escapeHtml(t.comercio)}</span>` : ''}</td>
         <td class="cat"><span class="chip ${t.type==='gasto'?'expense':''}">${escapeHtml(t.cat)}</span></td>
         <td class="amount">${t.qty || 1}</td>
         <td class="amount ${t.type==='gasto'?'expense':'income'}">${t.type==='gasto'?'-':'+'}${fmt(t.amount)}</td>
