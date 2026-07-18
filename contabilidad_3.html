@@ -2653,15 +2653,66 @@ async function resolveLoginEmail(input){
     });
   }
 
+  // Colores tomados del logo (Distribuidora RG Tropical): azul marino y
+  // verde, con un acento celeste para la línea del encabezado.
+  const PDF_NAVY = [27, 55, 105];
+  const PDF_GREEN = [46, 139, 61];
+  const PDF_SKYBLUE = [62, 159, 216];
+  const PDF_GRAY = [120, 120, 120];
+
+  let logoDataUrlCache;
+  function getLogoDataUrl(){
+    if(logoDataUrlCache !== undefined) return logoDataUrlCache;
+    logoDataUrlCache = fetch('logo.jpg')
+      .then(res=>res.blob())
+      .then(blob=>new Promise((resolve,reject)=>{
+        const reader = new FileReader();
+        reader.onload = ()=>resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      }))
+      .catch(()=>null);
+    return logoDataUrlCache;
+  }
+
+  function drawCatalogHeader(doc, pageW, logoDataUrl, bizName){
+    const logoSize = 16;
+    if(logoDataUrl){
+      try{ doc.addImage(logoDataUrl, 'JPEG', 12, 8, logoSize, logoSize); }catch(e){ /* sigue sin logo */ }
+    }
+    doc.setTextColor(...PDF_NAVY);
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(15);
+    doc.text(bizName || 'Catálogo de productos', 12 + logoSize + 5, 15);
+    if(bizName){
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(9);
+      doc.setTextColor(...PDF_GRAY);
+      doc.text('Catálogo de productos', 12 + logoSize + 5, 20.5);
+    }
+    doc.setDrawColor(...PDF_GREEN);
+    doc.setLineWidth(0.8);
+    doc.line(12, 27, pageW-12, 27);
+    doc.setDrawColor(...PDF_SKYBLUE);
+    doc.setLineWidth(0.4);
+    doc.line(12, 28.3, pageW-12, 28.3);
+  }
+
   document.getElementById('downloadCatalogBtn').addEventListener('click', async ()=>{
     if(data.products.length===0){ alert('No hay productos en el inventario.'); return; }
     const quiereDetalle = confirm('¿Con qué precio quieres el catálogo?\n\nAceptar = Precio al detalle\nCancelar = Precio al por mayor');
     const priceMode = quiereDetalle ? 'detalle' : 'mayor';
 
-    const dims = {};
-    await Promise.all(data.products.filter(p=>p.image).map(async p=>{
-      dims[p.id] = await getImageDimensions(p.image);
-    }));
+    const [dims, logoDataUrl] = await Promise.all([
+      (async ()=>{
+        const out = {};
+        await Promise.all(data.products.filter(p=>p.image).map(async p=>{
+          out[p.id] = await getImageDimensions(p.image);
+        }));
+        return out;
+      })(),
+      getLogoDataUrl()
+    ]);
 
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit:'mm', format:'letter' });
@@ -2670,15 +2721,17 @@ async function resolveLoginEmail(input){
     const pageH = doc.internal.pageSize.getHeight();
 
     const cols = 2, rows = 3, perPage = cols*rows;
-    const marginX = 12, marginTop = 16, marginBottom = 12;
+    const marginX = 12, marginTop = 34, marginBottom = 12;
     const gapX = 8, gapY = 10;
     const cellW = (pageW - marginX*2 - gapX*(cols-1)) / cols;
     const cellH = (pageH - marginTop - marginBottom - gapY*(rows-1)) / rows;
     const imgSize = Math.min(cellW - 10, cellH - 26);
 
+    drawCatalogHeader(doc, pageW, logoDataUrl, data.bizName);
+
     data.products.forEach((p, idx)=>{
       const posInPage = idx % perPage;
-      if(idx>0 && posInPage===0) doc.addPage();
+      if(idx>0 && posInPage===0){ doc.addPage(); drawCatalogHeader(doc, pageW, logoDataUrl, data.bizName); }
       const col = posInPage % cols;
       const row = Math.floor(posInPage / cols);
       const cellX = marginX + col*(cellW+gapX);
@@ -2691,6 +2744,10 @@ async function resolveLoginEmail(input){
       const mayor = (p.priceDist!=null) ? p.priceDist : p.price;
       const shown = priceMode==='detalle' ? detalle : mayor;
 
+      doc.setDrawColor(...PDF_GREEN);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(imgX, imgY, imgSize, imgSize, 2, 2);
+
       const d = p.image ? dims[p.id] : null;
       if(p.image && d && d.width && d.height){
         let drawW = imgSize, drawH = imgSize;
@@ -2701,25 +2758,26 @@ async function resolveLoginEmail(input){
         try{ doc.addImage(p.image, 'JPEG', drawX, drawY, drawW, drawH); }
         catch(e){ /* si la imagen no carga, sigue sin ella */ }
       } else {
-        doc.setDrawColor(210);
-        doc.rect(imgX, imgY, imgSize, imgSize);
         doc.setFontSize(8);
-        doc.setTextColor(150);
+        doc.setTextColor(...PDF_GRAY);
         doc.text('Sin foto', centerX, imgY+imgSize/2, { align:'center' });
       }
 
       const textMaxWidth = cellW - 4;
       let textY = imgY + imgSize + 6;
 
-      doc.setTextColor(20);
+      doc.setFont('helvetica','bold');
+      doc.setTextColor(...PDF_NAVY);
       doc.setFontSize(10.5);
       doc.text(truncateForPdf(doc, p.name, textMaxWidth), centerX, textY, { align:'center' });
 
-      doc.setTextColor(130);
+      doc.setFont('helvetica','normal');
+      doc.setTextColor(...PDF_GRAY);
       doc.setFontSize(7.5);
       doc.text(truncateForPdf(doc, (p.cat||'').toUpperCase(), textMaxWidth), centerX, textY+5, { align:'center' });
 
-      doc.setTextColor(20);
+      doc.setFont('helvetica','bold');
+      doc.setTextColor(...PDF_GREEN);
       doc.setFontSize(11.5);
       doc.text(fmtPdf(shown), centerX, textY+13, { align:'center' });
     });
