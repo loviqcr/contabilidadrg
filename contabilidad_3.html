@@ -1847,7 +1847,13 @@ async function resolveLoginEmail(input){
               <div class="deuda-item">
                 <span>
                   ${escapeHtml(d.desc)}<br>
-                  <span class="meta">${formatDate(d.date)} · ${escapeHtml(d.cat)}${abonado>0 ? ` · Abonado: ${fmt(abonado)} de ${fmt(d.monto)}` : ''}</span>
+                  <span class="meta">
+                    <span class="deuda-date-cell">
+                      <span class="deuda-date-display">${formatDate(d.date)}</span>
+                      <button class="btn btn-ghost" style="padding:1px 5px;font-size:9px;" data-edit-deuda-date="${escapeHtml(d.id)}">✎</button>
+                    </span>
+                    · ${escapeHtml(d.cat)}${abonado>0 ? ` · Abonado: ${fmt(abonado)} de ${fmt(d.monto)}` : ''}
+                  </span>
                 </span>
                 <span style="display:flex;align-items:center;gap:8px;" class="deuda-item-actions">
                   <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;">${fmt(saldo)}</span>
@@ -1878,6 +1884,35 @@ async function resolveLoginEmail(input){
         e.stopPropagation();
         abonarUI(b.dataset.abonarDeuda, b);
       });
+    });
+    listEl.querySelectorAll('[data-edit-deuda-date]').forEach(b=>{
+      b.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        editDeudaDate(b.dataset.editDeudaDate, b);
+      });
+    });
+  }
+
+  function editDeudaDate(id, btn){
+    const d = data.deudas.find(d=>d.id===id);
+    if(!d) return;
+    const cell = btn.closest('.deuda-date-cell');
+    cell.innerHTML = `
+      <input type="date" class="deuda-date-input" value="${d.date}" style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;padding:3px 5px;border:1px solid var(--paper-line);border-radius:4px;">
+      <button class="btn btn-primary" style="padding:2px 6px;font-size:9px;margin-left:3px;" data-confirm-deuda-date="${escapeHtml(id)}">✓</button>
+      <button class="btn btn-ghost" style="padding:2px 6px;font-size:9px;" data-cancel-deuda-date="1">✕</button>
+    `;
+    cell.querySelector('[data-cancel-deuda-date]').addEventListener('click', (e)=>{
+      e.stopPropagation();
+      renderDeudas();
+    });
+    cell.querySelector('[data-confirm-deuda-date]').addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const newDate = cell.querySelector('.deuda-date-input').value;
+      if(!newDate) return;
+      d.date = newDate;
+      saveData();
+      renderDeudas();
     });
   }
 
