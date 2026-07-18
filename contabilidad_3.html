@@ -370,12 +370,26 @@
     user-select:none;
     -webkit-user-select:none;
     color:var(--ink-soft);
-    font-size:16px;
+    font-size:20px;
     line-height:1;
-    padding:2px 6px;
+    padding:8px 10px;
     flex-shrink:0;
   }
   .drag-handle:active{cursor:grabbing;}
+  .drag-handle-bar{
+    cursor:grab;
+    touch-action:none;
+    user-select:none;
+    -webkit-user-select:none;
+    text-align:center;
+    padding:8px 0;
+    font-size:15px;
+    letter-spacing:.1em;
+    color:var(--ink-soft);
+    background:var(--paper);
+    border-bottom:1px solid var(--paper-line);
+  }
+  .drag-handle-bar:active{cursor:grabbing;}
   [data-drag-item].dragging{opacity:0.45;}
 
   footer{
@@ -1408,11 +1422,13 @@ async function resolveLoginEmail(input){
           dragEl.classList.remove('dragging');
           window.removeEventListener('pointermove', onMove);
           window.removeEventListener('pointerup', onUp);
+          window.removeEventListener('pointercancel', onUp);
           const newOrder = [...containerEl.querySelectorAll('[data-drag-item]')].map(el=>el.dataset.dragItem);
           onReorder(newOrder);
         };
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
       });
     });
   }
@@ -2394,8 +2410,8 @@ async function resolveLoginEmail(input){
     const dragEnabled = !search;
     grid.innerHTML = list.map(p=>`
       <div class="product-card" data-drag-item="${escapeHtml(p.id)}">
+        ${dragEnabled ? `<div class="drag-handle-bar" data-drag-handle>⠿ mover</div>` : ''}
         <div class="product-photo">
-          ${dragEnabled ? `<span class="drag-handle" data-drag-handle style="position:absolute;top:4px;left:4px;background:rgba(255,255,255,0.85);border-radius:4px;">⠿</span>` : ''}
           ${p.image ? `<img src="${p.image}" alt="${escapeHtml(p.name)}">` : `<span class="placeholder">Sin foto</span>`}
         </div>
         <div class="product-body">
