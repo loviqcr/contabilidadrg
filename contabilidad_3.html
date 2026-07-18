@@ -363,6 +363,21 @@
   .cat-add{display:flex;gap:8px;}
   .cat-add input{flex:1;padding:8px 10px;border:1px solid var(--paper-line);border-radius:6px;font-family:'Inter',sans-serif;font-size:13px;background:var(--paper);}
 
+  /* DRAG REORDER */
+  .drag-handle{
+    cursor:grab;
+    touch-action:none;
+    user-select:none;
+    -webkit-user-select:none;
+    color:var(--ink-soft);
+    font-size:16px;
+    line-height:1;
+    padding:2px 6px;
+    flex-shrink:0;
+  }
+  .drag-handle:active{cursor:grabbing;}
+  [data-drag-item].dragging{opacity:0.45;}
+
   footer{
     text-align:center;
     color:rgba(241,234,216,0.5);
@@ -431,6 +446,7 @@
     background:var(--green-light);
     display:flex;align-items:center;justify-content:center;
     overflow:hidden;
+    position:relative;
   }
   .product-photo img{width:100%;height:100%;object-fit:cover;}
   .product-photo .placeholder{
@@ -1198,6 +1214,7 @@ async function resolveLoginEmail(input){
       const prodSnap = await getDocs(productsColRef());
       data.products = [];
       prodSnap.forEach(d=>data.products.push({ id: d.id, ...d.data() }));
+      data.products.sort((a,b)=>(a.order??0)-(b.order??0));
       const compSnap = await getDocs(comprobantesColRef());
       data.comprobantes = [];
       compSnap.forEach(d=>data.comprobantes.push({ id: d.id, ...d.data() }));
@@ -1364,6 +1381,42 @@ async function resolveLoginEmail(input){
 
   function uid(){ return 'tx_' + Date.now() + '_' + Math.random().toString(36).slice(2,8); }
 
+  // ---------- DRAG REORDER (arrastrar y soltar, mouse + táctil) ----------
+  function dragAfterElement(container, y){
+    const els = [...container.querySelectorAll('[data-drag-item]:not(.dragging)')];
+    return els.reduce((closest, child)=>{
+      const box = child.getBoundingClientRect();
+      const offset = y - box.top - box.height/2;
+      if(offset<0 && offset>closest.offset) return { offset, element: child };
+      return closest;
+    }, { offset: -Infinity, element: null }).element;
+  }
+
+  function enableDragReorder(containerEl, onReorder){
+    containerEl.querySelectorAll('[data-drag-handle]').forEach(handle=>{
+      handle.addEventListener('pointerdown', (e)=>{
+        const dragEl = handle.closest('[data-drag-item]');
+        if(!dragEl) return;
+        e.preventDefault();
+        dragEl.classList.add('dragging');
+        const onMove = (ev)=>{
+          const after = dragAfterElement(containerEl, ev.clientY);
+          if(after==null) containerEl.appendChild(dragEl);
+          else containerEl.insertBefore(dragEl, after);
+        };
+        const onUp = ()=>{
+          dragEl.classList.remove('dragging');
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+          const newOrder = [...containerEl.querySelectorAll('[data-drag-item]')].map(el=>el.dataset.dragItem);
+          onReorder(newOrder);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+      });
+    });
+  }
+
   // ---------- TABS ----------
   document.querySelectorAll('nav.tabs button').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -1528,11 +1581,14 @@ async function resolveLoginEmail(input){
       const ventas = data.transactions.filter(t=>t.comercio===c.nombre).sort((a,b)=>b.date.localeCompare(a.date));
       const total = ventas.reduce((s,t)=>s+Number(t.amount),0);
       return `
-        <div class="cat-item" style="flex-direction:column;align-items:stretch;gap:8px;">
+        <div class="cat-item" style="flex-direction:column;align-items:stretch;gap:8px;" data-drag-item="${escapeHtml(c.id)}">
           <div style="display:flex;justify-content:space-between;align-items:center;">
-            <span>
-              <strong>${escapeHtml(c.nombre)}</strong><br>
-              <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);">${escapeHtml(c.telefono || 'Sin teléfono')} · ${escapeHtml(c.direccion || 'Sin dirección')}</span>
+            <span style="display:flex;align-items:center;gap:6px;">
+              <span class="drag-handle" data-drag-handle>⠿</span>
+              <span>
+                <strong>${escapeHtml(c.nombre)}</strong><br>
+                <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);">${escapeHtml(c.telefono || 'Sin teléfono')} · ${escapeHtml(c.direccion || 'Sin dirección')}</span>
+              </span>
             </span>
             <span style="display:flex;align-items:center;gap:10px;">
               <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--green-ink);font-weight:600;">${fmt(total)}</span>
@@ -1559,6 +1615,10 @@ async function resolveLoginEmail(input){
         const hist = document.getElementById('comercioHist-'+b.dataset.toggleHist);
         hist.style.display = hist.style.display==='none' ? 'block' : 'none';
       });
+    });
+    enableDragReorder(listEl, (newOrderIds)=>{
+      data.comercios = newOrderIds.map(id=>data.comercios.find(c=>c.id===id));
+      saveData();
     });
   }
 
@@ -2171,7 +2231,7 @@ async function resolveLoginEmail(input){
       product.name = name; product.cat = cat; product.cost = cost; product.price = price; product.priceDist = priceDist; product.stock = stock;
       if(pendingImage) product.image = pendingImage;
     } else {
-      product = { id: productId, name, cat, cost, price, priceDist, stock, image: pendingImage || null };
+      product = { id: productId, name, cat, cost, price, priceDist, stock, image: pendingImage || null, order: data.products.length };
       data.products.push(product);
     }
     try{
@@ -2331,9 +2391,11 @@ async function resolveLoginEmail(input){
       grid.innerHTML = `<p class="empty-state" style="grid-column:1/-1;padding:30px 0;">Aún no hay productos en el inventario. Agrega el primero arriba.</p>`;
       return;
     }
+    const dragEnabled = !search;
     grid.innerHTML = list.map(p=>`
-      <div class="product-card">
+      <div class="product-card" data-drag-item="${escapeHtml(p.id)}">
         <div class="product-photo">
+          ${dragEnabled ? `<span class="drag-handle" data-drag-handle style="position:absolute;top:4px;left:4px;background:rgba(255,255,255,0.85);border-radius:4px;">⠿</span>` : ''}
           ${p.image ? `<img src="${p.image}" alt="${escapeHtml(p.name)}">` : `<span class="placeholder">Sin foto</span>`}
         </div>
         <div class="product-body">
@@ -2366,6 +2428,15 @@ async function resolveLoginEmail(input){
     grid.querySelectorAll('[data-restock]').forEach(b=>b.addEventListener('click', ()=>restock(b.dataset.restock)));
     grid.querySelectorAll('[data-edit]').forEach(b=>b.addEventListener('click', ()=>editProduct(b.dataset.edit)));
     grid.querySelectorAll('[data-del-prod]').forEach(b=>b.addEventListener('click', ()=>deleteProduct(b.dataset.delProd)));
+    if(dragEnabled){
+      enableDragReorder(grid, (newOrderIds)=>{
+        newOrderIds.forEach((id, idx)=>{
+          const p = data.products.find(p=>p.id===id);
+          if(p){ p.order = idx; saveProduct(p).catch(()=>{}); }
+        });
+        data.products.sort((a,b)=>(a.order??0)-(b.order??0));
+      });
+    }
   }
 
   function escapeHtml(s){
