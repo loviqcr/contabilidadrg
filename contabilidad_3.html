@@ -1076,6 +1076,14 @@
 
       <div class="section-title"><span class="num">§2</span> Usuarios registrados</div>
       <div class="cat-list" id="adminUserList"></div>
+
+      <div class="section-title"><span class="num">§3</span> Herramientas</div>
+      <div class="cat-item" style="align-items:flex-start;flex-direction:column;gap:8px;">
+        <span style="font-family:'Inter',sans-serif;font-size:13px;color:var(--ink-soft);">
+          Reparación de una sola vez: busca ventas a crédito antiguas cuyo movimiento de "Costo de..." quedó con una fecha distinta a la de su deuda (porque se creó antes de que quedaran vinculados), y la sincroniza.
+        </span>
+        <button type="button" class="btn btn-ghost" id="repairCogsDatesBtn">Sincronizar fechas de costos con sus deudas</button>
+      </div>
     </div>
 
   </div>
@@ -1950,6 +1958,66 @@ async function resolveLoginEmail(input){
       render();
     });
   }
+
+  // ---------- REPARACIÓN DE UNA SOLA VEZ: vincular costos huérfanos ----------
+  // Ventas a crédito hechas antes de que el "Costo de..." quedara vinculado a
+  // su deuda (deudaId) se emparejan por texto de descripción y orden de
+  // creación (el id incluye el timestamp, así que ordenar por id ordena por
+  // fecha de creación real, aunque haya varias con la misma descripción).
+  const repairBtn = document.getElementById('repairCogsDatesBtn');
+  if(repairBtn) repairBtn.addEventListener('click', ()=>{
+    function creationTime(id){
+      const m = /^tx_(\d+)_/.exec(id||'');
+      return m ? Number(m[1]) : 0;
+    }
+    function productPart(deuda){
+      let s = deuda.desc.replace(/^Venta de /, '');
+      const suffix = ` a ${deuda.contraparte}`;
+      if(deuda.contraparte && s.endsWith(suffix)) s = s.slice(0, -suffix.length);
+      return s;
+    }
+
+    const linkedDeudaIds = new Set(data.transactions.filter(t=>t.deudaId).map(t=>t.deudaId));
+    const cobrarDeudas = data.deudas.filter(d=>d.tipo==='cobrar' && !linkedDeudaIds.has(d.id));
+    const orphanCogs = data.transactions.filter(t=>t.cat===COGS_CAT && !t.deudaId);
+
+    const deudaGroups = {};
+    cobrarDeudas.forEach(d=>{
+      const key = productPart(d);
+      (deudaGroups[key] = deudaGroups[key] || []).push(d);
+    });
+    const cogsGroups = {};
+    orphanCogs.forEach(t=>{
+      const key = t.desc.replace(/^Costo de /, '');
+      (cogsGroups[key] = cogsGroups[key] || []).push(t);
+    });
+
+    const matches = [];
+    Object.keys(deudaGroups).forEach(key=>{
+      const deudasArr = deudaGroups[key].sort((a,b)=>creationTime(a.id)-creationTime(b.id));
+      const cogsArr = (cogsGroups[key]||[]).sort((a,b)=>creationTime(a.id)-creationTime(b.id));
+      const n = Math.min(deudasArr.length, cogsArr.length);
+      for(let i=0;i<n;i++){
+        matches.push({ deuda: deudasArr[i], tx: cogsArr[i] });
+      }
+    });
+
+    if(matches.length===0){
+      alert('No se encontraron movimientos de costo desincronizados para corregir.');
+      return;
+    }
+    const preview = matches.slice(0,10).map(m=>`"${m.tx.desc}": ${m.tx.date} → ${m.deuda.date}`).join('\n');
+    const more = matches.length>10 ? `\n… y ${matches.length-10} más` : '';
+    if(!confirm(`Se encontraron ${matches.length} movimiento(s) de costo para vincular y sincronizar con la fecha de su deuda:\n\n${preview}${more}\n\n¿Aplicar los cambios?`)) return;
+
+    matches.forEach(m=>{
+      m.tx.deudaId = m.deuda.id;
+      m.tx.date = m.deuda.date;
+    });
+    saveData();
+    render();
+    alert(`Listo, se corrigieron ${matches.length} movimiento(s).`);
+  });
 
   function abonarUI(id, btn){
     const d = data.deudas.find(d=>d.id===id);
