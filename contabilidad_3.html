@@ -1775,7 +1775,7 @@ async function resolveLoginEmail(input){
     } else {
       data.transactions.push({
         id: uid(), date: fecha, type:'gasto', desc: `Abono: ${d.desc}`, cat: d.cat,
-        qty:1, unitPrice:monto, amount:monto
+        comercio: d.contraparte, qty:1, unitPrice:monto, amount:monto
       });
     }
     if(deudaSaldo(d) <= 0.01){
