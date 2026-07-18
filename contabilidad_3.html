@@ -1083,6 +1083,7 @@
   <footer>Los datos se guardan automáticamente en tu cuenta · © 2026 Loviq JCS — Costa Rica</footer>
 </div>
 
+<script src="jspdf.umd.min.js"></script>
 <script type="module">
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -2545,57 +2546,68 @@ async function resolveLoginEmail(input){
     return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   }
 
-  // ---------- CATÁLOGO PDF (una página por producto, vía impresión del navegador) ----------
+  // ---------- CATÁLOGO PDF (una página por producto) ----------
+  // Genera el PDF directamente con jsPDF y lo descarga como archivo — a
+  // diferencia de abrir una ventana e imprimir, esto funciona igual en
+  // celular, tablet y PC, incluida la app instalada (donde no hay diálogo
+  // de impresión disponible).
+  // La fuente estándar de jsPDF no incluye el glifo de "₡", así que para el
+  // PDF se usa el código ISO "CRC" en su lugar (en la app normal sí se ve el
+  // símbolo, vía fmt()).
+  function fmtPdf(n){
+    const num = Number(n)||0;
+    return 'CRC ' + num.toLocaleString('es-CR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+
   document.getElementById('downloadCatalogBtn').addEventListener('click', ()=>{
     if(data.products.length===0){ alert('No hay productos en el inventario.'); return; }
     const quiereDetalle = confirm('¿Con qué precio quieres el catálogo?\n\nAceptar = Precio al detalle\nCancelar = Precio al por mayor');
     const priceMode = quiereDetalle ? 'detalle' : 'mayor';
     const priceLabel = quiereDetalle ? 'Precio al detalle' : 'Precio al por mayor';
-    const win = window.open('', '_blank');
-    if(!win){ alert('El navegador bloqueó la ventana. Permite ventanas emergentes para descargar el catálogo.'); return; }
-    const pages = data.products.map(p=>{
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit:'mm', format:'letter' });
+    doc.setFont('helvetica','normal');
+    const pageW = doc.internal.pageSize.getWidth();
+    const imgSize = 90;
+    const imgX = (pageW - imgSize)/2;
+    const imgY = 30;
+
+    data.products.forEach((p, idx)=>{
+      if(idx>0) doc.addPage();
       const detalle = (p.priceDetalle!=null) ? p.priceDetalle : p.price;
       const mayor = (p.priceDist!=null) ? p.priceDist : p.price;
       const shown = priceMode==='detalle' ? detalle : mayor;
-      return `
-        <div class="cat-page">
-          <div class="cat-photo">${p.image ? `<img src="${p.image}" alt="">` : `<div class="cat-noimg">Sin foto</div>`}</div>
-          <h2>${escapeHtml(p.name)}</h2>
-          <div class="cat-cat">${escapeHtml(p.cat)}</div>
-          <div class="cat-prices">
-            <div><span>${priceLabel}</span><strong>${fmt(shown)}</strong></div>
-          </div>
-        </div>
-      `;
-    }).join('');
-    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
-      <title>Catálogo — ${escapeHtml(data.bizName || 'Inventario')}</title>
-      <style>
-        *{box-sizing:border-box;}
-        body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:0;color:#1a1a1a;}
-        .cat-page{
-          page-break-after:always;
-          display:flex;flex-direction:column;align-items:center;justify-content:center;
-          min-height:95vh;padding:40px;text-align:center;
-        }
-        .cat-page:last-child{page-break-after:auto;}
-        .cat-photo{
-          width:280px;height:280px;border:1px solid #ddd;border-radius:8px;overflow:hidden;
-          display:flex;align-items:center;justify-content:center;margin-bottom:24px;background:#f7f7f5;
-        }
-        .cat-photo img{width:100%;height:100%;object-fit:cover;}
-        .cat-noimg{color:#999;font-style:italic;font-size:13px;}
-        h2{margin:0 0 6px;font-size:26px;}
-        .cat-cat{color:#777;font-size:13px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:24px;}
-        .cat-prices{display:flex;gap:36px;justify-content:center;}
-        .cat-prices div{display:flex;flex-direction:column;gap:4px;}
-        .cat-prices span{font-size:12px;color:#777;text-transform:uppercase;letter-spacing:.05em;}
-        .cat-prices strong{font-size:24px;}
-      </style>
-      </head><body>${pages}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(()=>{ win.print(); }, 400);
+
+      if(p.image){
+        try{ doc.addImage(p.image, 'JPEG', imgX, imgY, imgSize, imgSize); }
+        catch(e){ /* si la imagen no carga, sigue sin ella */ }
+      } else {
+        doc.setDrawColor(210);
+        doc.rect(imgX, imgY, imgSize, imgSize);
+        doc.setFontSize(10);
+        doc.setTextColor(150);
+        doc.text('Sin foto', pageW/2, imgY+imgSize/2, { align:'center' });
+      }
+
+      doc.setTextColor(20);
+      doc.setFontSize(20);
+      doc.text(p.name, pageW/2, imgY+imgSize+18, { align:'center', maxWidth: pageW-40 });
+
+      doc.setTextColor(130);
+      doc.setFontSize(11);
+      doc.text((p.cat || '').toUpperCase(), pageW/2, imgY+imgSize+27, { align:'center' });
+
+      doc.setTextColor(120);
+      doc.setFontSize(10);
+      doc.text(priceLabel.toUpperCase(), pageW/2, imgY+imgSize+42, { align:'center' });
+
+      doc.setTextColor(20);
+      doc.setFontSize(22);
+      doc.text(fmtPdf(shown), pageW/2, imgY+imgSize+53, { align:'center' });
+    });
+
+    doc.save(`catalogo-${(data.bizName||'inventario').replace(/[^a-z0-9]+/gi,'-')}.pdf`);
   });
 
   // ---------- FILTERS ----------
