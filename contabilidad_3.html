@@ -684,7 +684,7 @@
               <input type="number" id="prodCost" step="0.01" min="0" placeholder="0.00">
             </div>
             <div>
-              <label>Precio al detalle (₡)</label>
+              <label>Precio de venta (₡)</label>
               <input type="number" id="prodPrice" step="0.01" min="0" placeholder="0.00" required>
             </div>
             <div>
@@ -694,8 +694,12 @@
           </div>
           <div class="form-row">
             <div>
+              <label>Precio al detalle (₡)</label>
+              <input type="number" id="prodPriceDetalle" step="0.01" min="0" placeholder="Igual al de venta si se deja vacío">
+            </div>
+            <div>
               <label>Precio al por mayor (₡)</label>
-              <input type="number" id="prodPriceDist" step="0.01" min="0" placeholder="Igual al de detalle si se deja vacío">
+              <input type="number" id="prodPriceDist" step="0.01" min="0" placeholder="Igual al de venta si se deja vacío">
             </div>
           </div>
           <div class="form-row-actions">
@@ -2271,6 +2275,8 @@ async function resolveLoginEmail(input){
     const cat = document.getElementById('prodCat').value;
     const cost = parseFloat(document.getElementById('prodCost').value) || 0;
     const price = parseFloat(document.getElementById('prodPrice').value);
+    const priceDetalleRaw = parseFloat(document.getElementById('prodPriceDetalle').value);
+    const priceDetalle = isNaN(priceDetalleRaw) ? null : priceDetalleRaw;
     const priceDistRaw = parseFloat(document.getElementById('prodPriceDist').value);
     const priceDist = isNaN(priceDistRaw) ? null : priceDistRaw;
     const stock = parseInt(document.getElementById('prodStock').value, 10);
@@ -2280,10 +2286,10 @@ async function resolveLoginEmail(input){
     let product;
     if(editingProdId){
       product = data.products.find(p=>p.id===editingProdId);
-      product.name = name; product.cat = cat; product.cost = cost; product.price = price; product.priceDist = priceDist; product.stock = stock;
+      product.name = name; product.cat = cat; product.cost = cost; product.price = price; product.priceDetalle = priceDetalle; product.priceDist = priceDist; product.stock = stock;
       if(pendingImage) product.image = pendingImage;
     } else {
-      product = { id: productId, name, cat, cost, price, priceDist, stock, image: pendingImage || null, order: data.products.length };
+      product = { id: productId, name, cat, cost, price, priceDetalle, priceDist, stock, image: pendingImage || null, order: data.products.length };
       data.products.push(product);
     }
     try{
@@ -2305,6 +2311,7 @@ async function resolveLoginEmail(input){
     document.getElementById('prodCat').value = p.cat;
     document.getElementById('prodCost').value = p.cost || '';
     document.getElementById('prodPrice').value = p.price;
+    document.getElementById('prodPriceDetalle').value = (p.priceDetalle===null || p.priceDetalle===undefined) ? '' : p.priceDetalle;
     document.getElementById('prodPriceDist').value = (p.priceDist===null || p.priceDist===undefined) ? '' : p.priceDist;
     document.getElementById('prodStock').value = p.stock;
     pendingImage = p.image || null;
@@ -2340,8 +2347,9 @@ async function resolveLoginEmail(input){
       <input type="number" class="sell-qty-input" value="1" min="1" max="${p.stock}" step="1" style="width:60px;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 8px;border:1px solid var(--paper-line);border-radius:5px;background:#fff;">
       <input type="date" class="sell-date-input" value="${new Date().toISOString().slice(0,10)}" style="font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 8px;border:1px solid var(--paper-line);border-radius:5px;background:#fff;">
       <select class="sell-pricetype-select" style="font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 8px;border:1px solid var(--paper-line);border-radius:5px;background:#fff;">
-        <option value="cliente">Precio al detalle</option>
-        <option value="distribuidor">Precio al por mayor</option>
+        <option value="venta">Precio de venta</option>
+        <option value="detalle">Precio al detalle</option>
+        <option value="mayor">Precio al por mayor</option>
       </select>
       ${data.comercios.length ? `
         <select class="sell-comercio-select" style="flex:1;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 8px;border:1px solid var(--paper-line);border-radius:5px;background:#fff;">
@@ -2377,7 +2385,9 @@ async function resolveLoginEmail(input){
     p.stock -= qty;
     const today = fecha || new Date().toISOString().slice(0,10);
     const qtyLabel = qty>1 ? `${qty} ` : '';
-    const unitPrice = (priceType==='distribuidor' && p.priceDist!=null) ? p.priceDist : p.price;
+    const unitPrice = priceType==='detalle' ? (p.priceDetalle!=null ? p.priceDetalle : p.price)
+      : priceType==='mayor' ? (p.priceDist!=null ? p.priceDist : p.price)
+      : p.price;
     const desc = comercioNombre ? `Venta de ${qtyLabel}${p.name} a ${comercioNombre}` : `Venta de ${qtyLabel}${p.name}`;
     const amount = unitPrice*qty;
     if(aCredito){
@@ -2454,7 +2464,7 @@ async function resolveLoginEmail(input){
           <div class="product-name">${escapeHtml(p.name)}</div>
           <span class="chip">${escapeHtml(p.cat)}</span>
           <div class="product-meta">
-            <span class="product-price">${fmt(p.price)}${(p.priceDist!=null && p.priceDist!==p.price) ? ` <span style="color:var(--ink-soft);font-weight:400;">/ Mayor: ${fmt(p.priceDist)}</span>` : ''}</span>
+            <span class="product-price">${fmt(p.price)}<span style="color:var(--ink-soft);font-weight:400;">${(p.priceDetalle!=null && p.priceDetalle!==p.price) ? ` / Detalle: ${fmt(p.priceDetalle)}` : ''}${(p.priceDist!=null && p.priceDist!==p.price) ? ` / Mayor: ${fmt(p.priceDist)}` : ''}</span></span>
             <span class="stock-badge ${p.stock<=5?'low':''}">${p.stock} en stock</span>
           </div>
           <div class="product-cost-row">
@@ -2501,7 +2511,7 @@ async function resolveLoginEmail(input){
     const win = window.open('', '_blank');
     if(!win){ alert('El navegador bloqueó la ventana. Permite ventanas emergentes para descargar el catálogo.'); return; }
     const pages = data.products.map(p=>{
-      const detalle = p.price;
+      const detalle = (p.priceDetalle!=null) ? p.priceDetalle : p.price;
       const mayor = (p.priceDist!=null) ? p.priceDist : p.price;
       return `
         <div class="cat-page">
