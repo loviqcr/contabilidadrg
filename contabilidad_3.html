@@ -397,7 +397,7 @@
   }
   .img-drop:hover{border-color:var(--brass);}
   .img-drop img{width:100%;height:100%;object-fit:cover;}
-  #imgDropLabel{
+  #imgDropLabel, .img-drop-label{
     font-family:'IBM Plex Mono',monospace;
     font-size:11px;
     color:var(--ink-soft);
@@ -530,6 +530,7 @@
     <button data-tab="comercios">Comercios</button>
     <button data-tab="deudas">Deudas</button>
     <button data-tab="mermas">Mermas y regalías</button>
+    <button data-tab="comprobantes">Comprobantes</button>
     <button data-tab="admin" id="adminTabBtn" style="display:none;">Usuarios</button>
   </nav>
 
@@ -879,6 +880,82 @@
       </div>
     </div>
 
+    <!-- COMPROBANTES -->
+    <div class="view" id="view-comprobantes">
+      <div class="section-title"><span class="num">§1</span> Comprobantes de pago</div>
+      <div class="cat-cols">
+        <div class="cat-col">
+          <h3>Comprobante con foto</h3>
+          <form id="comprobanteForm" class="prod-form">
+            <div class="prod-form-img">
+              <label class="img-drop" id="comprobanteImgDrop">
+                <img id="comprobanteImgPreview" style="display:none;">
+                <span id="comprobanteImgDropLabel" class="img-drop-label">+ Foto</span>
+                <input type="file" id="comprobanteImage" accept="image/*" style="display:none;">
+              </label>
+            </div>
+            <div class="prod-form-fields">
+              <div class="form-row">
+                <div>
+                  <label>Nombre del cliente</label>
+                  <input type="text" id="comprobanteCliente" placeholder="Ej. Juan Pérez">
+                </div>
+                <div>
+                  <label>Fecha</label>
+                  <input type="date" id="comprobanteFecha">
+                </div>
+              </div>
+              <div class="form-row">
+                <div>
+                  <label>Descripción</label>
+                  <input type="text" id="comprobanteDesc" placeholder="Ej. SINPE por pedido">
+                </div>
+                <div>
+                  <label>Monto (₡)</label>
+                  <input type="number" id="comprobanteMonto" step="0.01" min="0" placeholder="0.00">
+                </div>
+              </div>
+              <div class="form-row-actions">
+                <button type="submit" class="btn btn-primary">Guardar comprobante</button>
+              </div>
+            </div>
+          </form>
+          <div class="cat-list" id="comprobanteList"></div>
+        </div>
+        <div class="cat-col">
+          <h3>Efectivo (manual)</h3>
+          <form id="efectivoForm" class="prod-form" style="align-items:flex-start;">
+            <div class="prod-form-fields">
+              <div class="form-row">
+                <div>
+                  <label>Nombre del cliente</label>
+                  <input type="text" id="efectivoCliente" placeholder="Ej. Juan Pérez">
+                </div>
+                <div>
+                  <label>Fecha</label>
+                  <input type="date" id="efectivoFecha">
+                </div>
+              </div>
+              <div class="form-row">
+                <div>
+                  <label>Descripción</label>
+                  <input type="text" id="efectivoDesc" placeholder="Ej. Pago en efectivo">
+                </div>
+                <div>
+                  <label>Monto (₡)</label>
+                  <input type="number" id="efectivoMonto" step="0.01" min="0" placeholder="0.00">
+                </div>
+              </div>
+              <div class="form-row-actions">
+                <button type="submit" class="btn btn-primary">Guardar pago en efectivo</button>
+              </div>
+            </div>
+          </form>
+          <div class="cat-list" id="efectivoList"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ADMIN -->
     <div class="view" id="view-admin">
       <div class="section-title"><span class="num">§1</span> Crear nuevo usuario</div>
@@ -1013,6 +1090,8 @@ async function resolveLoginEmail(input){
       deudas: [],
       mermas: [],
       regalias: [],
+      comprobantes: [],
+      pagosEfectivo: [],
       categories: {
         ingreso: ['Ventas','Servicios','Otros ingresos'],
         gasto: ['Suministros','Alquiler','Salarios','Impuestos','Otros gastos']
@@ -1044,6 +1123,20 @@ async function resolveLoginEmail(input){
     await deleteDoc(doc(productsColRef(), id));
   }
 
+  // Los comprobantes llevan foto, así que igual que los productos van en su
+  // propia colección para no llenar el límite de 1MB del documento compartido.
+  function comprobantesColRef(){
+    return collection(db, 'business', 'shared', 'comprobantes');
+  }
+
+  async function saveComprobante(comprobante){
+    await setDoc(doc(comprobantesColRef(), comprobante.id), comprobante);
+  }
+
+  async function deleteComprobanteDoc(id){
+    await deleteDoc(doc(comprobantesColRef(), id));
+  }
+
   // Migración de una sola vez: si el libro compartido todavía no existe pero
   // esta cuenta tenía datos guardados de cuando cada usuario tenía su propio
   // libro, los copia al libro compartido para no perderlos de vista.
@@ -1069,13 +1162,16 @@ async function resolveLoginEmail(input){
       const prodSnap = await getDocs(productsColRef());
       data.products = [];
       prodSnap.forEach(d=>data.products.push({ id: d.id, ...d.data() }));
+      const compSnap = await getDocs(comprobantesColRef());
+      data.comprobantes = [];
+      compSnap.forEach(d=>data.comprobantes.push({ id: d.id, ...d.data() }));
     }catch(e){ console.error('Error cargando datos', e); }
     render();
   }
 
   async function saveData(){
     try{
-      const { products, ...mainData } = data;
+      const { products, comprobantes, ...mainData } = data;
       await setDoc(userDocRef(), mainData);
     }catch(e){
       console.error('Error guardando datos', e);
@@ -1730,6 +1826,149 @@ async function resolveLoginEmail(input){
     });
   }
 
+  // ---------- COMPROBANTES DE PAGO ----------
+  let pendingComprobanteImage = null;
+
+  const comprobanteImageInput = document.getElementById('comprobanteImage');
+  comprobanteImageInput.addEventListener('change', (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const dropLabel = document.getElementById('comprobanteImgDropLabel');
+    dropLabel.textContent = 'Procesando...';
+    const reader = new FileReader();
+    reader.onerror = ()=>{
+      alert('No se pudo leer la foto. Intenta con otra imagen.');
+      dropLabel.textContent = '+ Foto';
+    };
+    reader.onload = (ev)=>{
+      const img = new Image();
+      img.onerror = ()=>{
+        alert('Ese archivo no se pudo abrir como imagen (formato no compatible). Prueba tomando la foto de nuevo o eligiendo otra.');
+        dropLabel.textContent = '+ Foto';
+      };
+      img.onload = ()=>{
+        const maxDim = 400;
+        let w = img.width, h = img.height;
+        if(w>h && w>maxDim){ h = h*(maxDim/w); w = maxDim; }
+        else if(h>maxDim){ w = w*(maxDim/h); h = maxDim; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        pendingComprobanteImage = canvas.toDataURL('image/jpeg', 0.75);
+        const preview = document.getElementById('comprobanteImgPreview');
+        preview.src = pendingComprobanteImage;
+        preview.style.display = 'block';
+        dropLabel.style.display = 'none';
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  function resetComprobanteForm(){
+    document.getElementById('comprobanteForm').reset();
+    pendingComprobanteImage = null;
+    document.getElementById('comprobanteImgPreview').style.display = 'none';
+    document.getElementById('comprobanteImgPreview').src = '';
+    document.getElementById('comprobanteImgDropLabel').style.display = 'block';
+    document.getElementById('comprobanteImgDropLabel').textContent = '+ Foto';
+    document.getElementById('comprobanteFecha').valueAsDate = new Date();
+  }
+
+  document.getElementById('comprobanteForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const cliente = document.getElementById('comprobanteCliente').value.trim();
+    const desc = document.getElementById('comprobanteDesc').value.trim();
+    const monto = parseFloat(document.getElementById('comprobanteMonto').value);
+    const fecha = document.getElementById('comprobanteFecha').value || new Date().toISOString().slice(0,10);
+    if(!cliente){ alert('Escribe el nombre del cliente.'); return; }
+    if(!desc || isNaN(monto) || monto<=0) return;
+    const comprobante = { id: uid(), cliente, desc, monto, date: fecha, image: pendingComprobanteImage || null };
+    data.comprobantes.push(comprobante);
+    try{
+      await saveComprobante(comprobante);
+    }catch(err){
+      alert('No se pudo guardar el comprobante: ' + err.message);
+      return;
+    }
+    resetComprobanteForm();
+    renderComprobantes();
+  });
+
+  function removeComprobante(id){
+    if(!confirm('¿Quitar este comprobante?')) return;
+    data.comprobantes = data.comprobantes.filter(c=>c.id!==id);
+    renderComprobantes();
+    deleteComprobanteDoc(id).catch(err=>alert('No se pudo eliminar el comprobante: ' + err.message));
+  }
+
+  function renderComprobantes(){
+    const listEl = document.getElementById('comprobanteList');
+    if(data.comprobantes.length===0){
+      listEl.innerHTML = '<p class="empty-state" style="padding:12px 0;">Sin comprobantes guardados.</p>';
+      return;
+    }
+    const sorted = [...data.comprobantes].sort((a,b)=>b.date.localeCompare(a.date));
+    listEl.innerHTML = sorted.map(c=>`
+      <div class="cat-item">
+        <span style="display:flex;align-items:center;gap:10px;">
+          ${c.image ? `<img src="${c.image}" alt="Comprobante" style="width:40px;height:40px;object-fit:cover;border-radius:5px;border:1px solid var(--paper-line);">` : ''}
+          <span>
+            <strong>${escapeHtml(c.cliente)}</strong> · ${fmt(c.monto)}<br>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);">${formatDate(c.date)} · ${escapeHtml(c.desc)}</span>
+          </span>
+        </span>
+        <button class="btn btn-danger" data-remove-comprobante="${escapeHtml(c.id)}">Quitar</button>
+      </div>
+    `).join('');
+    listEl.querySelectorAll('[data-remove-comprobante]').forEach(b=>{
+      b.addEventListener('click', ()=>removeComprobante(b.dataset.removeComprobante));
+    });
+  }
+
+  document.getElementById('efectivoForm').addEventListener('submit', (e)=>{
+    e.preventDefault();
+    const cliente = document.getElementById('efectivoCliente').value.trim();
+    const desc = document.getElementById('efectivoDesc').value.trim();
+    const monto = parseFloat(document.getElementById('efectivoMonto').value);
+    const fecha = document.getElementById('efectivoFecha').value || new Date().toISOString().slice(0,10);
+    if(!cliente){ alert('Escribe el nombre del cliente.'); return; }
+    if(!desc || isNaN(monto) || monto<=0) return;
+    data.pagosEfectivo.push({ id: uid(), cliente, desc, monto, date: fecha });
+    saveData();
+    document.getElementById('efectivoForm').reset();
+    document.getElementById('efectivoFecha').valueAsDate = new Date();
+    renderEfectivo();
+  });
+
+  function removeEfectivo(id){
+    if(!confirm('¿Quitar este registro de pago en efectivo?')) return;
+    data.pagosEfectivo = data.pagosEfectivo.filter(p=>p.id!==id);
+    saveData();
+    renderEfectivo();
+  }
+
+  function renderEfectivo(){
+    const listEl = document.getElementById('efectivoList');
+    if(data.pagosEfectivo.length===0){
+      listEl.innerHTML = '<p class="empty-state" style="padding:12px 0;">Sin pagos en efectivo guardados.</p>';
+      return;
+    }
+    const sorted = [...data.pagosEfectivo].sort((a,b)=>b.date.localeCompare(a.date));
+    listEl.innerHTML = sorted.map(p=>`
+      <div class="cat-item">
+        <span>
+          <strong>${escapeHtml(p.cliente)}</strong> · ${fmt(p.monto)}<br>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);">${formatDate(p.date)} · ${escapeHtml(p.desc)}</span>
+        </span>
+        <button class="btn btn-danger" data-remove-efectivo="${escapeHtml(p.id)}">Quitar</button>
+      </div>
+    `).join('');
+    listEl.querySelectorAll('[data-remove-efectivo]').forEach(b=>{
+      b.addEventListener('click', ()=>removeEfectivo(b.dataset.removeEfectivo));
+    });
+  }
+
   // ---------- INVENTARIO ----------
   let editingProdId = null;
   let pendingImage = null; // base64 string
@@ -2165,12 +2404,16 @@ async function resolveLoginEmail(input){
     populateMermaProductSelect();
     renderMermas();
     renderRegalias();
+    renderComprobantes();
+    renderEfectivo();
   }
 
   document.getElementById('txDate').valueAsDate = new Date();
   document.getElementById('deudaFecha').valueAsDate = new Date();
   document.getElementById('mermaFecha').valueAsDate = new Date();
   document.getElementById('regaliaFecha').valueAsDate = new Date();
+  document.getElementById('comprobanteFecha').valueAsDate = new Date();
+  document.getElementById('efectivoFecha').valueAsDate = new Date();
 })();
 
 if('serviceWorker' in navigator){
