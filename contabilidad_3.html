@@ -2435,9 +2435,10 @@ async function resolveLoginEmail(input){
       : p.price;
     const desc = comercioNombre ? `Venta de ${qtyLabel}${p.name} a ${comercioNombre}` : `Venta de ${qtyLabel}${p.name}`;
     const amount = unitPrice*qty;
+    const deudaId = aCredito ? uid() : null;
     if(aCredito){
       data.deudas.push({
-        id: uid(), tipo:'cobrar', contraparte: comercioNombre, desc, cat: p.cat,
+        id: deudaId, tipo:'cobrar', contraparte: comercioNombre, desc, cat: p.cat,
         monto: amount, date: today, pagado:false, abonos: []
       });
     } else {
@@ -2452,7 +2453,7 @@ async function resolveLoginEmail(input){
       data.transactions.push({
         id: uid(), date: today,
         type:'gasto', desc:`Costo de ${qtyLabel}${p.name}`, cat: COGS_CAT,
-        qty, unitPrice:p.cost, amount:p.cost*qty
+        deudaId, qty, unitPrice:p.cost, amount:p.cost*qty
       });
     }
     saveData();
