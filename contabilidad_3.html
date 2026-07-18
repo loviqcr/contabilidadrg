@@ -1410,6 +1410,18 @@ async function resolveLoginEmail(input){
 
   function uid(){ return 'tx_' + Date.now() + '_' + Math.random().toString(36).slice(2,8); }
 
+  // Da la fecha de HOY en hora local (YYYY-MM-DD). No usar
+  // new Date().toISOString() para esto: esa función siempre da la fecha en
+  // UTC, y Costa Rica está a UTC-6, así que de 6pm en adelante ya marca el
+  // día siguiente.
+  function todayLocal(){
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const day = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+  }
+
   // ---------- DRAG REORDER (arrastrar y soltar, mouse + táctil) ----------
   function dragAfterElement(container, y){
     const els = [...container.querySelectorAll('[data-drag-item]:not(.dragging)')];
@@ -1501,7 +1513,7 @@ async function resolveLoginEmail(input){
     data.transactions.push({ id: uid(), date, type, desc, cat, qty, unitPrice, amount });
     saveData();
     document.getElementById('txForm').reset();
-    document.getElementById('txDate').valueAsDate = new Date();
+    document.getElementById('txDate').value = todayLocal();
     document.getElementById('txQty').value = 1;
     populateCatSelect();
     render();
@@ -1739,7 +1751,7 @@ async function resolveLoginEmail(input){
     const desc = document.getElementById('deudaDesc').value.trim();
     const cat = document.getElementById('deudaCat').value;
     const monto = parseFloat(document.getElementById('deudaMonto').value);
-    const fecha = document.getElementById('deudaFecha').value || new Date().toISOString().slice(0,10);
+    const fecha = document.getElementById('deudaFecha').value || todayLocal();
     if(!contraparte){ alert('Agrega o elige un proveedor primero.'); return; }
     if(!desc || isNaN(monto) || monto<=0) return;
     data.deudas.push({ id: uid(), tipo:'pagar', contraparte, desc, cat, monto, date: fecha, pagado:false, abonos: [] });
@@ -1754,13 +1766,13 @@ async function resolveLoginEmail(input){
     const desc = document.getElementById('deudaCobrarDesc').value.trim();
     const cat = document.getElementById('deudaCobrarCat').value;
     const monto = parseFloat(document.getElementById('deudaCobrarMonto').value);
-    const fecha = document.getElementById('deudaCobrarFecha').value || new Date().toISOString().slice(0,10);
+    const fecha = document.getElementById('deudaCobrarFecha').value || todayLocal();
     if(!contraparte){ alert('Agrega o elige un comercio primero.'); return; }
     if(!desc || isNaN(monto) || monto<=0) return;
     data.deudas.push({ id: uid(), tipo:'cobrar', contraparte, desc, cat, monto, date: fecha, pagado:false, abonos: [] });
     saveData();
     document.getElementById('nuevaDeudaCobrarForm').reset();
-    document.getElementById('deudaCobrarFecha').valueAsDate = new Date();
+    document.getElementById('deudaCobrarFecha').value = todayLocal();
     renderDeudas();
   });
 
@@ -1801,7 +1813,7 @@ async function resolveLoginEmail(input){
     if(!d) return;
     const saldo = deudaSaldo(d);
     if(!confirm(`¿Marcar como pagado el saldo de ${fmt(saldo)} con ${d.contraparte}?`)) return;
-    const today = new Date().toISOString().slice(0,10);
+    const today = todayLocal();
     addAbono(id, saldo, today);
   }
   function renderDeudas(){
@@ -1937,7 +1949,7 @@ async function resolveLoginEmail(input){
     const actions = btn.closest('.deuda-item-actions');
     actions.innerHTML = `
       <input type="number" class="abono-monto-input" value="${saldo}" step="0.01" min="0.01" max="${saldo}" style="width:90px;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:5px 8px;border:1px solid var(--paper-line);border-radius:5px;">
-      <input type="date" class="abono-fecha-input" value="${new Date().toISOString().slice(0,10)}" style="font-family:'IBM Plex Mono',monospace;font-size:11px;padding:5px 8px;border:1px solid var(--paper-line);border-radius:5px;">
+      <input type="date" class="abono-fecha-input" value="${todayLocal()}" style="font-family:'IBM Plex Mono',monospace;font-size:11px;padding:5px 8px;border:1px solid var(--paper-line);border-radius:5px;">
       <button class="btn btn-primary" style="padding:5px 10px;font-size:10.5px;" data-confirm-abono="${escapeHtml(id)}">Confirmar</button>
       <button class="btn btn-ghost" style="padding:5px 10px;font-size:10.5px;" data-cancel-abono="1">Cancelar</button>
     `;
@@ -1948,7 +1960,7 @@ async function resolveLoginEmail(input){
     actions.querySelector('[data-confirm-abono]').addEventListener('click', (e)=>{
       e.stopPropagation();
       const monto = parseFloat(actions.querySelector('.abono-monto-input').value);
-      const fecha = actions.querySelector('.abono-fecha-input').value || new Date().toISOString().slice(0,10);
+      const fecha = actions.querySelector('.abono-fecha-input').value || todayLocal();
       addAbono(id, monto, fecha);
     });
   }
@@ -1977,7 +1989,7 @@ async function resolveLoginEmail(input){
     const productId = document.getElementById('mermaProducto').value;
     const cantidad = parseInt(document.getElementById('mermaCantidad').value, 10);
     const motivo = document.getElementById('mermaMotivo').value.trim();
-    const fecha = document.getElementById('mermaFecha').value || new Date().toISOString().slice(0,10);
+    const fecha = document.getElementById('mermaFecha').value || todayLocal();
     const p = data.products.find(p=>p.id===productId);
     if(!p){ alert('Elige un producto.'); return; }
     if(!cantidad || cantidad<=0){ alert('Escribe una cantidad válida.'); return; }
@@ -1994,7 +2006,7 @@ async function resolveLoginEmail(input){
     saveData();
     saveProduct(p).catch(err=>alert('No se pudo actualizar el stock: ' + err.message));
     document.getElementById('mermaForm').reset();
-    document.getElementById('mermaFecha').valueAsDate = new Date();
+    document.getElementById('mermaFecha').value = todayLocal();
     render();
   });
 
@@ -2033,7 +2045,7 @@ async function resolveLoginEmail(input){
     const beneficiario = document.getElementById('regaliaBeneficiario').value.trim();
     const desc = document.getElementById('regaliaDesc').value.trim();
     const monto = parseFloat(document.getElementById('regaliaMonto').value);
-    const fecha = document.getElementById('regaliaFecha').value || new Date().toISOString().slice(0,10);
+    const fecha = document.getElementById('regaliaFecha').value || todayLocal();
     const p = data.products.find(p=>p.id===productId);
     if(!p){ alert('Elige un producto.'); return; }
     if(!cantidad || cantidad<=0){ alert('Escribe una cantidad válida.'); return; }
@@ -2050,7 +2062,7 @@ async function resolveLoginEmail(input){
     saveData();
     saveProduct(p).catch(err=>alert('No se pudo actualizar el stock: ' + err.message));
     document.getElementById('regaliaForm').reset();
-    document.getElementById('regaliaFecha').valueAsDate = new Date();
+    document.getElementById('regaliaFecha').value = todayLocal();
     render();
   });
 
@@ -2128,7 +2140,7 @@ async function resolveLoginEmail(input){
     document.getElementById('comprobanteImgPreview').src = '';
     document.getElementById('comprobanteImgDropLabel').style.display = 'block';
     document.getElementById('comprobanteImgDropLabel').textContent = '+ Foto';
-    document.getElementById('comprobanteFecha').valueAsDate = new Date();
+    document.getElementById('comprobanteFecha').value = todayLocal();
   }
 
   document.getElementById('comprobanteForm').addEventListener('submit', async (e)=>{
@@ -2136,7 +2148,7 @@ async function resolveLoginEmail(input){
     const cliente = document.getElementById('comprobanteCliente').value.trim();
     const desc = document.getElementById('comprobanteDesc').value.trim();
     const monto = parseFloat(document.getElementById('comprobanteMonto').value);
-    const fecha = document.getElementById('comprobanteFecha').value || new Date().toISOString().slice(0,10);
+    const fecha = document.getElementById('comprobanteFecha').value || todayLocal();
     if(!cliente){ alert('Escribe el nombre del cliente.'); return; }
     if(!desc || isNaN(monto) || monto<=0) return;
     const comprobante = { id: uid(), cliente, desc, monto, date: fecha, image: pendingComprobanteImage || null };
@@ -2187,13 +2199,13 @@ async function resolveLoginEmail(input){
     const cliente = document.getElementById('efectivoCliente').value.trim();
     const desc = document.getElementById('efectivoDesc').value.trim();
     const monto = parseFloat(document.getElementById('efectivoMonto').value);
-    const fecha = document.getElementById('efectivoFecha').value || new Date().toISOString().slice(0,10);
+    const fecha = document.getElementById('efectivoFecha').value || todayLocal();
     if(!cliente){ alert('Escribe el nombre del cliente.'); return; }
     if(!desc || isNaN(monto) || monto<=0) return;
     data.pagosEfectivo.push({ id: uid(), cliente, desc, monto, date: fecha });
     saveData();
     document.getElementById('efectivoForm').reset();
-    document.getElementById('efectivoFecha').valueAsDate = new Date();
+    document.getElementById('efectivoFecha').value = todayLocal();
     renderEfectivo();
   });
 
@@ -2369,7 +2381,7 @@ async function resolveLoginEmail(input){
     const actions = btn.closest('.product-actions');
     actions.innerHTML = `
       <input type="number" class="sell-qty-input" value="1" min="1" max="${p.stock}" step="1" style="width:60px;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 8px;border:1px solid var(--paper-line);border-radius:5px;background:#fff;">
-      <input type="date" class="sell-date-input" value="${new Date().toISOString().slice(0,10)}" style="font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 8px;border:1px solid var(--paper-line);border-radius:5px;background:#fff;">
+      <input type="date" class="sell-date-input" value="${todayLocal()}" style="font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 8px;border:1px solid var(--paper-line);border-radius:5px;background:#fff;">
       <select class="sell-pricetype-select" style="font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 8px;border:1px solid var(--paper-line);border-radius:5px;background:#fff;">
         <option value="venta">Precio de venta</option>
         <option value="detalle">Precio al detalle</option>
@@ -2390,7 +2402,7 @@ async function resolveLoginEmail(input){
     actions.querySelector('[data-cancel-sell]').addEventListener('click', renderProducts);
     actions.querySelector('[data-confirm-sell]').addEventListener('click', ()=>{
       const qty = parseInt(actions.querySelector('.sell-qty-input').value, 10);
-      const fecha = actions.querySelector('.sell-date-input').value || new Date().toISOString().slice(0,10);
+      const fecha = actions.querySelector('.sell-date-input').value || todayLocal();
       const priceType = actions.querySelector('.sell-pricetype-select').value;
       const comercioSelect = actions.querySelector('.sell-comercio-select');
       const comercio = comercioSelect ? comercioSelect.value : '';
@@ -2407,7 +2419,7 @@ async function resolveLoginEmail(input){
     if(!p) return;
     if(qty>p.stock){ alert(`Solo hay ${p.stock} en existencia.`); return; }
     p.stock -= qty;
-    const today = fecha || new Date().toISOString().slice(0,10);
+    const today = fecha || todayLocal();
     const qtyLabel = qty>1 ? `${qty} ` : '';
     const unitPrice = priceType==='detalle' ? (p.priceDetalle!=null ? p.priceDetalle : p.price)
       : priceType==='mayor' ? (p.priceDist!=null ? p.priceDist : p.price)
@@ -2761,13 +2773,13 @@ async function resolveLoginEmail(input){
     renderEfectivo();
   }
 
-  document.getElementById('txDate').valueAsDate = new Date();
-  document.getElementById('deudaFecha').valueAsDate = new Date();
-  document.getElementById('deudaCobrarFecha').valueAsDate = new Date();
-  document.getElementById('mermaFecha').valueAsDate = new Date();
-  document.getElementById('regaliaFecha').valueAsDate = new Date();
-  document.getElementById('comprobanteFecha').valueAsDate = new Date();
-  document.getElementById('efectivoFecha').valueAsDate = new Date();
+  document.getElementById('txDate').value = todayLocal();
+  document.getElementById('deudaFecha').value = todayLocal();
+  document.getElementById('deudaCobrarFecha').value = todayLocal();
+  document.getElementById('mermaFecha').value = todayLocal();
+  document.getElementById('regaliaFecha').value = todayLocal();
+  document.getElementById('comprobanteFecha').value = todayLocal();
+  document.getElementById('efectivoFecha').value = todayLocal();
 })();
 
 if('serviceWorker' in navigator){
