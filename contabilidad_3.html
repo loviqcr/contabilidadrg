@@ -2226,6 +2226,7 @@ async function resolveLoginEmail(input){
     const actions = btn.closest('.product-actions');
     actions.innerHTML = `
       <input type="number" class="sell-qty-input" value="1" min="1" max="${p.stock}" step="1" style="width:60px;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 8px;border:1px solid var(--paper-line);border-radius:5px;background:#fff;">
+      <input type="date" class="sell-date-input" value="${new Date().toISOString().slice(0,10)}" style="font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 8px;border:1px solid var(--paper-line);border-radius:5px;background:#fff;">
       <select class="sell-pricetype-select" style="font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 8px;border:1px solid var(--paper-line);border-radius:5px;background:#fff;">
         <option value="cliente">Precio cliente</option>
         <option value="distribuidor">Precio distribuidor</option>
@@ -2245,6 +2246,7 @@ async function resolveLoginEmail(input){
     actions.querySelector('[data-cancel-sell]').addEventListener('click', renderProducts);
     actions.querySelector('[data-confirm-sell]').addEventListener('click', ()=>{
       const qty = parseInt(actions.querySelector('.sell-qty-input').value, 10);
+      const fecha = actions.querySelector('.sell-date-input').value || new Date().toISOString().slice(0,10);
       const priceType = actions.querySelector('.sell-pricetype-select').value;
       const comercioSelect = actions.querySelector('.sell-comercio-select');
       const comercio = comercioSelect ? comercioSelect.value : '';
@@ -2252,16 +2254,16 @@ async function resolveLoginEmail(input){
       const aCredito = creditoCheck ? creditoCheck.checked : false;
       if(!qty || qty<=0){ alert('Escribe una cantidad válida.'); return; }
       if(aCredito && !comercio){ alert('Elige un comercio para vender a crédito.'); return; }
-      confirmSale(id, comercio, qty, aCredito, priceType);
+      confirmSale(id, comercio, qty, aCredito, priceType, fecha);
     });
   }
 
-  function confirmSale(id, comercioNombre, qty, aCredito, priceType){
+  function confirmSale(id, comercioNombre, qty, aCredito, priceType, fecha){
     const p = data.products.find(p=>p.id===id);
     if(!p) return;
     if(qty>p.stock){ alert(`Solo hay ${p.stock} en existencia.`); return; }
     p.stock -= qty;
-    const today = new Date().toISOString().slice(0,10);
+    const today = fecha || new Date().toISOString().slice(0,10);
     const qtyLabel = qty>1 ? `${qty} ` : '';
     const unitPrice = (priceType==='distribuidor' && p.priceDist!=null) ? p.priceDist : p.price;
     const desc = comercioNombre ? `Venta de ${qtyLabel}${p.name} a ${comercioNombre}` : `Venta de ${qtyLabel}${p.name}`;
