@@ -27,12 +27,12 @@ service cloud.firestore {
       }
     }
 
-    // Solo el admin puede leer el directorio de usuarios. La escritura ocurre
+    // Solo los admins pueden leer el directorio de usuarios. La escritura ocurre
     // al crear la cuenta (ver createUserAsAdmin), momento en el que quien está
     // autenticado es el usuario recién creado, no el admin — mismo modelo de
     // riesgo aceptado que la creación de cuentas en sí (ver auditoría).
     match /userDirectory/{uid} {
-      allow read: if request.auth != null && request.auth.token.email == "loviqcr@gmail.com";
+      allow read: if request.auth != null && request.auth.token.email in ["loviqcr@gmail.com", "ygarcia@rgtropical.local"];
       allow write: if request.auth != null;
     }
 

@@ -1080,7 +1080,7 @@ const firebaseConfig = {
   messagingSenderId: "468292887116",
   appId: "1:468292887116:web:15ade733eb9de8a0b74ae9"
 };
-const ADMIN_EMAIL = "loviqcr@gmail.com";
+const ADMIN_EMAILS = ["loviqcr@gmail.com", "ygarcia@rgtropical.local"];
 // Firebase Auth solo acepta correos para iniciar sesión, no usuarios sueltos.
 // Para los usuarios no-admin generamos un correo interno a partir de su nombre
 // de usuario (nunca se envía nada ahí) y guardamos el mapeo usuario→correo en
@@ -1377,8 +1377,8 @@ async function resolveLoginEmail(input){
       currentUser = user;
       authOverlay.style.display = 'none';
       appRoot.style.display = 'block';
-      adminTabBtn.style.display = (user.email === ADMIN_EMAIL) ? '' : 'none';
-      if(user.email === ADMIN_EMAIL) renderUserList();
+      adminTabBtn.style.display = ADMIN_EMAILS.includes(user.email) ? '' : 'none';
+      if(ADMIN_EMAILS.includes(user.email)) renderUserList();
       await loadData();
     } else {
       currentUser = null;
