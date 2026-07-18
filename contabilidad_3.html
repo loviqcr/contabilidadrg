@@ -2548,19 +2548,22 @@ async function resolveLoginEmail(input){
   // ---------- CATÁLOGO PDF (una página por producto, vía impresión del navegador) ----------
   document.getElementById('downloadCatalogBtn').addEventListener('click', ()=>{
     if(data.products.length===0){ alert('No hay productos en el inventario.'); return; }
+    const quiereDetalle = confirm('¿Con qué precio quieres el catálogo?\n\nAceptar = Precio al detalle\nCancelar = Precio al por mayor');
+    const priceMode = quiereDetalle ? 'detalle' : 'mayor';
+    const priceLabel = quiereDetalle ? 'Precio al detalle' : 'Precio al por mayor';
     const win = window.open('', '_blank');
     if(!win){ alert('El navegador bloqueó la ventana. Permite ventanas emergentes para descargar el catálogo.'); return; }
     const pages = data.products.map(p=>{
       const detalle = (p.priceDetalle!=null) ? p.priceDetalle : p.price;
       const mayor = (p.priceDist!=null) ? p.priceDist : p.price;
+      const shown = priceMode==='detalle' ? detalle : mayor;
       return `
         <div class="cat-page">
           <div class="cat-photo">${p.image ? `<img src="${p.image}" alt="">` : `<div class="cat-noimg">Sin foto</div>`}</div>
           <h2>${escapeHtml(p.name)}</h2>
           <div class="cat-cat">${escapeHtml(p.cat)}</div>
           <div class="cat-prices">
-            <div><span>Precio al detalle</span><strong>${fmt(detalle)}</strong></div>
-            <div><span>Precio al por mayor</span><strong>${fmt(mayor)}</strong></div>
+            <div><span>${priceLabel}</span><strong>${fmt(shown)}</strong></div>
           </div>
         </div>
       `;
