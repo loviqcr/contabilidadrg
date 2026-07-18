@@ -2500,7 +2500,10 @@ async function resolveLoginEmail(input){
     }
     body.innerHTML = rows.map(t=>`
       <tr>
-        <td>${formatDate(t.date)}</td>
+        <td class="tx-date-cell" style="white-space:nowrap;">
+          <span class="tx-date-display">${formatDate(t.date)}</span>
+          <button class="btn btn-ghost" style="padding:2px 6px;font-size:10px;margin-left:4px;" data-edit-date="${t.id}">✎</button>
+        </td>
         <td>${escapeHtml(t.desc)}</td>
         <td class="cat"><span class="chip ${t.type==='gasto'?'expense':''}">${escapeHtml(t.cat)}</span></td>
         <td class="amount">${t.qty || 1}</td>
@@ -2512,6 +2515,28 @@ async function resolveLoginEmail(input){
       b.addEventListener('click', ()=>{
         if(confirm('¿Eliminar este movimiento?')) deleteTx(b.dataset.del);
       });
+    });
+    body.querySelectorAll('[data-edit-date]').forEach(b=>{
+      b.addEventListener('click', ()=>editTxDate(b.dataset.editDate, b));
+    });
+  }
+
+  function editTxDate(id, btn){
+    const t = data.transactions.find(t=>t.id===id);
+    if(!t) return;
+    const cell = btn.closest('.tx-date-cell');
+    cell.innerHTML = `
+      <input type="date" class="tx-date-input" value="${t.date}" style="font-family:'IBM Plex Mono',monospace;font-size:11px;padding:4px 6px;border:1px solid var(--paper-line);border-radius:5px;">
+      <button class="btn btn-primary" style="padding:3px 7px;font-size:10px;margin-left:4px;" data-confirm-date="${escapeHtml(id)}">✓</button>
+      <button class="btn btn-ghost" style="padding:3px 7px;font-size:10px;" data-cancel-date="1">✕</button>
+    `;
+    cell.querySelector('[data-cancel-date]').addEventListener('click', renderTxTable);
+    cell.querySelector('[data-confirm-date]').addEventListener('click', ()=>{
+      const newDate = cell.querySelector('.tx-date-input').value;
+      if(!newDate) return;
+      t.date = newDate;
+      saveData();
+      render();
     });
   }
 
