@@ -529,6 +529,7 @@
     <button data-tab="categorias">Categorías</button>
     <button data-tab="comercios">Comercios</button>
     <button data-tab="deudas">Deudas</button>
+    <button data-tab="mermas">Mermas y regalías</button>
     <button data-tab="admin" id="adminTabBtn" style="display:none;">Usuarios</button>
   </nav>
 
@@ -809,6 +810,75 @@
       <div id="deudaList"></div>
     </div>
 
+    <!-- MERMAS Y REGALIAS -->
+    <div class="view" id="view-mermas">
+      <div class="section-title"><span class="num">§1</span> Mermas y regalías</div>
+      <div class="cat-cols">
+        <div class="cat-col">
+          <h3>Mermas</h3>
+          <form id="mermaForm" class="prod-form" style="align-items:flex-start;">
+            <div class="prod-form-fields">
+              <div class="form-row">
+                <div>
+                  <label>Producto</label>
+                  <select id="mermaProducto"></select>
+                </div>
+              </div>
+              <div class="form-row three-col">
+                <div>
+                  <label>Cantidad</label>
+                  <input type="number" id="mermaCantidad" step="1" min="1" placeholder="0">
+                </div>
+                <div>
+                  <label>Motivo</label>
+                  <input type="text" id="mermaMotivo" placeholder="Ej. Producto dañado">
+                </div>
+                <div>
+                  <label>Fecha</label>
+                  <input type="date" id="mermaFecha">
+                </div>
+              </div>
+              <div class="form-row-actions">
+                <button type="submit" class="btn btn-primary">Registrar merma</button>
+              </div>
+            </div>
+          </form>
+          <div class="cat-list" id="mermaList"></div>
+        </div>
+        <div class="cat-col">
+          <h3>Regalías</h3>
+          <form id="regaliaForm" class="prod-form" style="align-items:flex-start;">
+            <div class="prod-form-fields">
+              <div class="form-row">
+                <div>
+                  <label>Beneficiario</label>
+                  <input type="text" id="regaliaBeneficiario" placeholder="Ej. Casa matriz">
+                </div>
+              </div>
+              <div class="form-row three-col">
+                <div>
+                  <label>Descripción</label>
+                  <input type="text" id="regaliaDesc" placeholder="Ej. Regalía mensual">
+                </div>
+                <div>
+                  <label>Monto (₡)</label>
+                  <input type="number" id="regaliaMonto" step="0.01" min="0" placeholder="0.00">
+                </div>
+                <div>
+                  <label>Fecha</label>
+                  <input type="date" id="regaliaFecha">
+                </div>
+              </div>
+              <div class="form-row-actions">
+                <button type="submit" class="btn btn-primary">Registrar regalía</button>
+              </div>
+            </div>
+          </form>
+          <div class="cat-list" id="regaliaList"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ADMIN -->
     <div class="view" id="view-admin">
       <div class="section-title"><span class="num">§1</span> Crear nuevo usuario</div>
@@ -941,6 +1011,8 @@ async function resolveLoginEmail(input){
       comercios: [],
       proveedores: [],
       deudas: [],
+      mermas: [],
+      regalias: [],
       categories: {
         ingreso: ['Ventas','Servicios','Otros ingresos'],
         gasto: ['Suministros','Alquiler','Salarios','Impuestos','Otros gastos']
@@ -1543,6 +1615,121 @@ async function resolveLoginEmail(input){
     });
   }
 
+  // ---------- MERMAS Y REGALIAS ----------
+  const MERMA_CAT = 'Mermas';
+  const REGALIA_CAT = 'Regalías';
+  function ensureGastoCategory(cat){
+    if(!data.categories.gasto.includes(cat)) data.categories.gasto.push(cat);
+  }
+
+  function populateMermaProductSelect(){
+    const sel = document.getElementById('mermaProducto');
+    sel.innerHTML = data.products.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')
+      || '<option value="">Sin productos en inventario</option>';
+  }
+
+  document.getElementById('mermaForm').addEventListener('submit', (e)=>{
+    e.preventDefault();
+    const productId = document.getElementById('mermaProducto').value;
+    const cantidad = parseInt(document.getElementById('mermaCantidad').value, 10);
+    const motivo = document.getElementById('mermaMotivo').value.trim();
+    const fecha = document.getElementById('mermaFecha').value || new Date().toISOString().slice(0,10);
+    const p = data.products.find(p=>p.id===productId);
+    if(!p){ alert('Elige un producto.'); return; }
+    if(!cantidad || cantidad<=0){ alert('Escribe una cantidad válida.'); return; }
+    if(!motivo){ alert('Escribe el motivo.'); return; }
+    if(cantidad>p.stock){ alert(`Solo hay ${p.stock} en existencia.`); return; }
+    p.stock -= cantidad;
+    ensureGastoCategory(MERMA_CAT);
+    const amount = (p.cost||0)*cantidad;
+    data.mermas.push({ id: uid(), productId: p.id, productName: p.name, cantidad, motivo, date: fecha });
+    data.transactions.push({
+      id: uid(), date: fecha, type:'gasto', desc: `Merma: ${cantidad} ${p.name} - ${motivo}`, cat: MERMA_CAT,
+      qty: cantidad, unitPrice: p.cost||0, amount
+    });
+    saveData();
+    saveProduct(p).catch(err=>alert('No se pudo actualizar el stock: ' + err.message));
+    document.getElementById('mermaForm').reset();
+    document.getElementById('mermaFecha').valueAsDate = new Date();
+    render();
+  });
+
+  function removeMerma(id){
+    if(!confirm('¿Quitar este registro de merma? No repone el stock ni borra el gasto ya contabilizado.')) return;
+    data.mermas = data.mermas.filter(m=>m.id!==id);
+    saveData();
+    renderMermas();
+  }
+
+  function renderMermas(){
+    const listEl = document.getElementById('mermaList');
+    if(data.mermas.length===0){
+      listEl.innerHTML = '<p class="empty-state" style="padding:12px 0;">Sin mermas registradas.</p>';
+      return;
+    }
+    const sorted = [...data.mermas].sort((a,b)=>b.date.localeCompare(a.date));
+    listEl.innerHTML = sorted.map(m=>`
+      <div class="cat-item">
+        <span>
+          <strong>${escapeHtml(m.productName)}</strong> · ${m.cantidad} unid.<br>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);">${formatDate(m.date)} · ${escapeHtml(m.motivo)}</span>
+        </span>
+        <button class="btn btn-danger" data-remove-merma="${escapeHtml(m.id)}">Quitar</button>
+      </div>
+    `).join('');
+    listEl.querySelectorAll('[data-remove-merma]').forEach(b=>{
+      b.addEventListener('click', ()=>removeMerma(b.dataset.removeMerma));
+    });
+  }
+
+  document.getElementById('regaliaForm').addEventListener('submit', (e)=>{
+    e.preventDefault();
+    const beneficiario = document.getElementById('regaliaBeneficiario').value.trim();
+    const desc = document.getElementById('regaliaDesc').value.trim();
+    const monto = parseFloat(document.getElementById('regaliaMonto').value);
+    const fecha = document.getElementById('regaliaFecha').value || new Date().toISOString().slice(0,10);
+    if(!beneficiario){ alert('Escribe el beneficiario.'); return; }
+    if(!desc || isNaN(monto) || monto<=0) return;
+    ensureGastoCategory(REGALIA_CAT);
+    data.regalias.push({ id: uid(), beneficiario, desc, monto, date: fecha });
+    data.transactions.push({
+      id: uid(), date: fecha, type:'gasto', desc: `Regalía a ${beneficiario}: ${desc}`, cat: REGALIA_CAT,
+      qty:1, unitPrice: monto, amount: monto
+    });
+    saveData();
+    document.getElementById('regaliaForm').reset();
+    document.getElementById('regaliaFecha').valueAsDate = new Date();
+    render();
+  });
+
+  function removeRegalia(id){
+    if(!confirm('¿Quitar este registro de regalía? No borra el gasto ya contabilizado.')) return;
+    data.regalias = data.regalias.filter(r=>r.id!==id);
+    saveData();
+    renderRegalias();
+  }
+
+  function renderRegalias(){
+    const listEl = document.getElementById('regaliaList');
+    if(data.regalias.length===0){
+      listEl.innerHTML = '<p class="empty-state" style="padding:12px 0;">Sin regalías registradas.</p>';
+      return;
+    }
+    const sorted = [...data.regalias].sort((a,b)=>b.date.localeCompare(a.date));
+    listEl.innerHTML = sorted.map(r=>`
+      <div class="cat-item">
+        <span>
+          <strong>${escapeHtml(r.beneficiario)}</strong> · ${fmt(r.monto)}<br>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);">${formatDate(r.date)} · ${escapeHtml(r.desc)}</span>
+        </span>
+        <button class="btn btn-danger" data-remove-regalia="${escapeHtml(r.id)}">Quitar</button>
+      </div>
+    `).join('');
+    listEl.querySelectorAll('[data-remove-regalia]').forEach(b=>{
+      b.addEventListener('click', ()=>removeRegalia(b.dataset.removeRegalia));
+    });
+  }
+
   // ---------- INVENTARIO ----------
   let editingProdId = null;
   let pendingImage = null; // base64 string
@@ -1975,10 +2162,15 @@ async function resolveLoginEmail(input){
     renderProducts();
     renderComercios();
     renderDeudas();
+    populateMermaProductSelect();
+    renderMermas();
+    renderRegalias();
   }
 
   document.getElementById('txDate').valueAsDate = new Date();
   document.getElementById('deudaFecha').valueAsDate = new Date();
+  document.getElementById('mermaFecha').valueAsDate = new Date();
+  document.getElementById('regaliaFecha').valueAsDate = new Date();
 })();
 
 if('serviceWorker' in navigator){
