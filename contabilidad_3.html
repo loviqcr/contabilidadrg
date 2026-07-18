@@ -2568,10 +2568,27 @@ async function resolveLoginEmail(input){
     return t + '…';
   }
 
-  document.getElementById('downloadCatalogBtn').addEventListener('click', ()=>{
+  // Lee el ancho/alto real de una foto (data URL) para poder ajustarla sin
+  // deformarla — addImage por sí solo estira la imagen al tamaño exacto que
+  // se le da, sin respetar su proporción original.
+  function getImageDimensions(dataUrl){
+    return new Promise((resolve)=>{
+      const img = new Image();
+      img.onload = ()=> resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      img.onerror = ()=> resolve(null);
+      img.src = dataUrl;
+    });
+  }
+
+  document.getElementById('downloadCatalogBtn').addEventListener('click', async ()=>{
     if(data.products.length===0){ alert('No hay productos en el inventario.'); return; }
     const quiereDetalle = confirm('¿Con qué precio quieres el catálogo?\n\nAceptar = Precio al detalle\nCancelar = Precio al por mayor');
     const priceMode = quiereDetalle ? 'detalle' : 'mayor';
+
+    const dims = {};
+    await Promise.all(data.products.filter(p=>p.image).map(async p=>{
+      dims[p.id] = await getImageDimensions(p.image);
+    }));
 
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit:'mm', format:'letter' });
@@ -2601,8 +2618,14 @@ async function resolveLoginEmail(input){
       const mayor = (p.priceDist!=null) ? p.priceDist : p.price;
       const shown = priceMode==='detalle' ? detalle : mayor;
 
-      if(p.image){
-        try{ doc.addImage(p.image, 'JPEG', imgX, imgY, imgSize, imgSize); }
+      const d = p.image ? dims[p.id] : null;
+      if(p.image && d && d.width && d.height){
+        let drawW = imgSize, drawH = imgSize;
+        if(d.width > d.height){ drawH = imgSize * (d.height/d.width); }
+        else if(d.height > d.width){ drawW = imgSize * (d.width/d.height); }
+        const drawX = centerX - drawW/2;
+        const drawY = imgY + (imgSize-drawH)/2;
+        try{ doc.addImage(p.image, 'JPEG', drawX, drawY, drawW, drawH); }
         catch(e){ /* si la imagen no carga, sigue sin ella */ }
       } else {
         doc.setDrawColor(210);
