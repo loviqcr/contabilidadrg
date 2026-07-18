@@ -923,6 +923,16 @@
             <div class="prod-form-fields">
               <div class="form-row">
                 <div>
+                  <label>Producto</label>
+                  <select id="regaliaProducto"></select>
+                </div>
+                <div>
+                  <label>Cantidad</label>
+                  <input type="number" id="regaliaCantidad" step="1" min="1" placeholder="0">
+                </div>
+              </div>
+              <div class="form-row">
+                <div>
                   <label>Beneficiario</label>
                   <input type="text" id="regaliaBeneficiario" placeholder="Ej. Casa matriz">
                 </div>
@@ -1956,6 +1966,12 @@ async function resolveLoginEmail(input){
       || '<option value="">Sin productos en inventario</option>';
   }
 
+  function populateRegaliaProductSelect(){
+    const sel = document.getElementById('regaliaProducto');
+    sel.innerHTML = data.products.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('')
+      || '<option value="">Sin productos en inventario</option>';
+  }
+
   document.getElementById('mermaForm').addEventListener('submit', (e)=>{
     e.preventDefault();
     const productId = document.getElementById('mermaProducto').value;
@@ -2012,19 +2028,27 @@ async function resolveLoginEmail(input){
 
   document.getElementById('regaliaForm').addEventListener('submit', (e)=>{
     e.preventDefault();
+    const productId = document.getElementById('regaliaProducto').value;
+    const cantidad = parseInt(document.getElementById('regaliaCantidad').value, 10);
     const beneficiario = document.getElementById('regaliaBeneficiario').value.trim();
     const desc = document.getElementById('regaliaDesc').value.trim();
     const monto = parseFloat(document.getElementById('regaliaMonto').value);
     const fecha = document.getElementById('regaliaFecha').value || new Date().toISOString().slice(0,10);
+    const p = data.products.find(p=>p.id===productId);
+    if(!p){ alert('Elige un producto.'); return; }
+    if(!cantidad || cantidad<=0){ alert('Escribe una cantidad válida.'); return; }
     if(!beneficiario){ alert('Escribe el beneficiario.'); return; }
     if(!desc || isNaN(monto) || monto<=0) return;
+    if(cantidad>p.stock){ alert(`Solo hay ${p.stock} en existencia.`); return; }
+    p.stock -= cantidad;
     ensureGastoCategory(REGALIA_CAT);
-    data.regalias.push({ id: uid(), beneficiario, desc, monto, date: fecha });
+    data.regalias.push({ id: uid(), productId: p.id, productName: p.name, cantidad, beneficiario, desc, monto, date: fecha });
     data.transactions.push({
-      id: uid(), date: fecha, type:'gasto', desc: `Regalía a ${beneficiario}: ${desc}`, cat: REGALIA_CAT,
-      qty:1, unitPrice: monto, amount: monto
+      id: uid(), date: fecha, type:'gasto', desc: `Regalía a ${beneficiario}: ${cantidad} ${p.name} - ${desc}`, cat: REGALIA_CAT,
+      qty: cantidad, unitPrice: monto, amount: monto
     });
     saveData();
+    saveProduct(p).catch(err=>alert('No se pudo actualizar el stock: ' + err.message));
     document.getElementById('regaliaForm').reset();
     document.getElementById('regaliaFecha').valueAsDate = new Date();
     render();
@@ -2048,7 +2072,7 @@ async function resolveLoginEmail(input){
       <div class="cat-item">
         <span>
           <strong>${escapeHtml(r.beneficiario)}</strong> · ${fmt(r.monto)}<br>
-          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);">${formatDate(r.date)} · ${escapeHtml(r.desc)}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);">${formatDate(r.date)} · ${r.productName ? `${escapeHtml(r.productName)} (${r.cantidad}) · ` : ''}${escapeHtml(r.desc)}</span>
         </span>
         <button class="btn btn-danger" data-remove-regalia="${escapeHtml(r.id)}">Quitar</button>
       </div>
@@ -2731,6 +2755,7 @@ async function resolveLoginEmail(input){
     renderDeudas();
     populateMermaProductSelect();
     renderMermas();
+    populateRegaliaProductSelect();
     renderRegalias();
     renderComprobantes();
     renderEfectivo();
