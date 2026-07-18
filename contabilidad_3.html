@@ -1797,12 +1797,12 @@ async function resolveLoginEmail(input){
     if(d.tipo==='cobrar'){
       data.transactions.push({
         id: uid(), date: fecha, type:'ingreso', desc: `Abono: ${d.desc}`, cat: d.cat,
-        comercio: d.contraparte, qty:1, unitPrice:monto, amount:monto
+        comercio: d.contraparte, deudaId: d.id, qty:1, unitPrice:monto, amount:monto
       });
     } else {
       data.transactions.push({
         id: uid(), date: fecha, type:'gasto', desc: `Abono: ${d.desc}`, cat: d.cat,
-        comercio: d.contraparte, qty:1, unitPrice:monto, amount:monto
+        comercio: d.contraparte, deudaId: d.id, qty:1, unitPrice:monto, amount:monto
       });
     }
     if(deudaSaldo(d) <= 0.01){
@@ -1942,8 +1942,12 @@ async function resolveLoginEmail(input){
       const newDate = cell.querySelector('.deuda-date-input').value;
       if(!newDate) return;
       d.date = newDate;
+      // Los movimientos que salieron de un abono a esta deuda quedan
+      // vinculados por deudaId — se mantienen con la misma fecha para que
+      // Deudas y Movimientos no se desincronicen.
+      data.transactions.filter(t=>t.deudaId===d.id).forEach(t=>{ t.date = newDate; });
       saveData();
-      renderDeudas();
+      render();
     });
   }
 
