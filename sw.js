@@ -1,4 +1,4 @@
-const CACHE_NAME = 'libro-contable-v2';
+const CACHE_NAME = 'libro-contable-v3';
 const SHELL = ['./', './index.html', './contabilidad_3.html', './manifest.json', './icon-192.png', './icon-512.png', './logo.jpg'];
 
 self.addEventListener('install', (e) => {
@@ -13,12 +13,21 @@ self.addEventListener('activate', (e) => {
   self.clients.claim();
 });
 
-// Cache-first para el cascarón de la app; todo lo demás (Firebase, fuentes) va directo a la red.
+// Network-first para el cascarón de la app: siempre intenta traer la versión
+// más nueva primero y actualiza el caché con lo que llegue; solo usa la copia
+// guardada si no hay conexión. Antes era cache-first y los cambios nuevos no
+// se veían hasta borrar el caché a mano, sin importar cómo se recargara.
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;
   e.respondWith(
-    caches.match(e.request).then((cached) => cached || fetch(e.request))
+    fetch(e.request)
+      .then((res) => {
+        const resClone = res.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(e.request, resClone));
+        return res;
+      })
+      .catch(() => caches.match(e.request))
   );
 });
