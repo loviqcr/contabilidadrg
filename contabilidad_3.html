@@ -2546,7 +2546,7 @@ async function resolveLoginEmail(input){
     return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   }
 
-  // ---------- CATÁLOGO PDF (una página por producto) ----------
+  // ---------- CATÁLOGO PDF (varios productos por página, en cuadrícula) ----------
   // Genera el PDF directamente con jsPDF y lo descarga como archivo — a
   // diferencia de abrir una ventana e imprimir, esto funciona igual en
   // celular, tablet y PC, incluida la app instalada (donde no hay diálogo
@@ -2559,22 +2559,44 @@ async function resolveLoginEmail(input){
     return 'CRC ' + num.toLocaleString('es-CR', {minimumFractionDigits:2, maximumFractionDigits:2});
   }
 
+  // Recorta el texto con "…" si no cabe en el ancho disponible, para que
+  // nombres largos no se encimen con el precio de abajo.
+  function truncateForPdf(doc, text, maxWidth){
+    if(doc.getTextWidth(text) <= maxWidth) return text;
+    let t = text;
+    while(t.length>1 && doc.getTextWidth(t+'…') > maxWidth){ t = t.slice(0,-1); }
+    return t + '…';
+  }
+
   document.getElementById('downloadCatalogBtn').addEventListener('click', ()=>{
     if(data.products.length===0){ alert('No hay productos en el inventario.'); return; }
     const quiereDetalle = confirm('¿Con qué precio quieres el catálogo?\n\nAceptar = Precio al detalle\nCancelar = Precio al por mayor');
     const priceMode = quiereDetalle ? 'detalle' : 'mayor';
-    const priceLabel = quiereDetalle ? 'Precio al detalle' : 'Precio al por mayor';
 
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit:'mm', format:'letter' });
     doc.setFont('helvetica','normal');
     const pageW = doc.internal.pageSize.getWidth();
-    const imgSize = 90;
-    const imgX = (pageW - imgSize)/2;
-    const imgY = 30;
+    const pageH = doc.internal.pageSize.getHeight();
+
+    const cols = 2, rows = 3, perPage = cols*rows;
+    const marginX = 12, marginTop = 16, marginBottom = 12;
+    const gapX = 8, gapY = 10;
+    const cellW = (pageW - marginX*2 - gapX*(cols-1)) / cols;
+    const cellH = (pageH - marginTop - marginBottom - gapY*(rows-1)) / rows;
+    const imgSize = Math.min(cellW - 10, cellH - 26);
 
     data.products.forEach((p, idx)=>{
-      if(idx>0) doc.addPage();
+      const posInPage = idx % perPage;
+      if(idx>0 && posInPage===0) doc.addPage();
+      const col = posInPage % cols;
+      const row = Math.floor(posInPage / cols);
+      const cellX = marginX + col*(cellW+gapX);
+      const cellY = marginTop + row*(cellH+gapY);
+      const centerX = cellX + cellW/2;
+      const imgX = centerX - imgSize/2;
+      const imgY = cellY;
+
       const detalle = (p.priceDetalle!=null) ? p.priceDetalle : p.price;
       const mayor = (p.priceDist!=null) ? p.priceDist : p.price;
       const shown = priceMode==='detalle' ? detalle : mayor;
@@ -2585,26 +2607,25 @@ async function resolveLoginEmail(input){
       } else {
         doc.setDrawColor(210);
         doc.rect(imgX, imgY, imgSize, imgSize);
-        doc.setFontSize(10);
+        doc.setFontSize(8);
         doc.setTextColor(150);
-        doc.text('Sin foto', pageW/2, imgY+imgSize/2, { align:'center' });
+        doc.text('Sin foto', centerX, imgY+imgSize/2, { align:'center' });
       }
 
+      const textMaxWidth = cellW - 4;
+      let textY = imgY + imgSize + 6;
+
       doc.setTextColor(20);
-      doc.setFontSize(20);
-      doc.text(p.name, pageW/2, imgY+imgSize+18, { align:'center', maxWidth: pageW-40 });
+      doc.setFontSize(10.5);
+      doc.text(truncateForPdf(doc, p.name, textMaxWidth), centerX, textY, { align:'center' });
 
       doc.setTextColor(130);
-      doc.setFontSize(11);
-      doc.text((p.cat || '').toUpperCase(), pageW/2, imgY+imgSize+27, { align:'center' });
-
-      doc.setTextColor(120);
-      doc.setFontSize(10);
-      doc.text(priceLabel.toUpperCase(), pageW/2, imgY+imgSize+42, { align:'center' });
+      doc.setFontSize(7.5);
+      doc.text(truncateForPdf(doc, (p.cat||'').toUpperCase(), textMaxWidth), centerX, textY+5, { align:'center' });
 
       doc.setTextColor(20);
-      doc.setFontSize(22);
-      doc.text(fmtPdf(shown), pageW/2, imgY+imgSize+53, { align:'center' });
+      doc.setFontSize(11.5);
+      doc.text(fmtPdf(shown), centerX, textY+13, { align:'center' });
     });
 
     doc.save(`catalogo-${(data.bizName||'inventario').replace(/[^a-z0-9]+/gi,'-')}.pdf`);
