@@ -355,6 +355,10 @@
   /* CATEGORIES VIEW */
   .cat-cols{display:grid;grid-template-columns:1fr 1fr;gap:24px;}
   .cat-col h3{font-family:'IBM Plex Mono',monospace;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);margin-bottom:10px;}
+  /* Mermas y Regalías tienen distinta cantidad de campos; se estiran las dos
+     tarjetas de formulario a la misma altura para que se vean parejas. */
+  #view-mermas .cat-col{display:flex;flex-direction:column;}
+  #view-mermas .cat-col .prod-form{flex:1;}
   .cat-list{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;}
   .cat-item{
     display:flex;justify-content:space-between;align-items:center;
