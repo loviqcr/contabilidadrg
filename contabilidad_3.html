@@ -3033,8 +3033,9 @@ async function resolveLoginEmail(input){
     const income = data.transactions.filter(t=>t.type==='ingreso').reduce((s,t)=>s+Number(t.amount),0);
     const expense = data.transactions.filter(t=>t.type==='gasto').reduce((s,t)=>s+Number(t.amount),0);
     const cutoff = data.saldoInicialFecha || '';
+    const NON_CASH_CATS = [COGS_CAT, MERMA_CAT, REGALIA_CAT];
     const incomeSince = data.transactions.filter(t=>t.type==='ingreso' && t.date>=cutoff).reduce((s,t)=>s+Number(t.amount),0);
-    const expenseSince = data.transactions.filter(t=>t.type==='gasto' && t.date>=cutoff).reduce((s,t)=>s+Number(t.amount),0);
+    const expenseSince = data.transactions.filter(t=>t.type==='gasto' && t.date>=cutoff && !NON_CASH_CATS.includes(t.cat)).reduce((s,t)=>s+Number(t.amount),0);
     const saldoInicial = Number(data.saldoInicial) || 0;
     const balance = saldoInicial + incomeSince - expenseSince;
 
