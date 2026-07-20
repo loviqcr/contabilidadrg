@@ -950,14 +950,10 @@
                   <input type="text" id="regaliaBeneficiario" placeholder="Ej. Casa matriz">
                 </div>
               </div>
-              <div class="form-row three-col">
+              <div class="form-row">
                 <div>
                   <label>Descripción</label>
                   <input type="text" id="regaliaDesc" placeholder="Ej. Regalía mensual">
-                </div>
-                <div>
-                  <label>Monto (₡)</label>
-                  <input type="number" id="regaliaMonto" step="0.01" min="0" placeholder="0.00">
                 </div>
                 <div>
                   <label>Fecha</label>
@@ -2209,20 +2205,20 @@ async function resolveLoginEmail(input){
     const cantidad = parseInt(document.getElementById('regaliaCantidad').value, 10);
     const beneficiario = document.getElementById('regaliaBeneficiario').value.trim();
     const desc = document.getElementById('regaliaDesc').value.trim();
-    const monto = parseFloat(document.getElementById('regaliaMonto').value);
     const fecha = document.getElementById('regaliaFecha').value || todayLocal();
     const p = data.products.find(p=>p.id===productId);
     if(!p){ alert('Elige un producto.'); return; }
     if(!cantidad || cantidad<=0){ alert('Escribe una cantidad válida.'); return; }
     if(!beneficiario){ alert('Escribe el beneficiario.'); return; }
-    if(!desc || isNaN(monto) || monto<=0) return;
+    if(!desc) return;
     if(cantidad>p.stock){ alert(`Solo hay ${p.stock} en existencia.`); return; }
     p.stock -= cantidad;
     ensureGastoCategory(REGALIA_CAT);
+    const monto = (p.cost||0)*cantidad;
     data.regalias.push({ id: uid(), productId: p.id, productName: p.name, cantidad, beneficiario, desc, monto, date: fecha });
     data.transactions.push({
       id: uid(), date: fecha, type:'gasto', desc: `Regalía a ${beneficiario}: ${cantidad} ${p.name} - ${desc}`, cat: REGALIA_CAT,
-      qty: cantidad, unitPrice: monto, amount: monto
+      qty: cantidad, unitPrice: p.cost||0, amount: monto
     });
     saveData();
     saveProduct(p).catch(err=>alert('No se pudo actualizar el stock: ' + err.message));
