@@ -970,6 +970,19 @@
     <!-- COMPROBANTES -->
     <div class="view" id="view-comprobantes">
       <div class="section-title"><span class="num">§1</span> Comprobantes de pago</div>
+      <div class="cards cards-2">
+        <div class="card income">
+          <div class="label">Total en comprobantes</div>
+          <div class="value" id="comprobantesTotal">₡0.00</div>
+        </div>
+        <div class="card income">
+          <div class="label">Total en efectivo</div>
+          <div class="value" id="efectivoTotal">₡0.00</div>
+        </div>
+      </div>
+      <p style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--ink-soft);margin:-8px 0 20px;">
+        Nota: estos totales son solo un respaldo/bitácora — no están sumados en el Balance de Resumen a menos que también hayas registrado la venta o el abono correspondiente.
+      </p>
       <div class="cat-cols">
         <div class="cat-col">
           <h3>Comprobante con foto</h3>
@@ -2299,6 +2312,8 @@ async function resolveLoginEmail(input){
 
   function renderComprobantes(){
     const listEl = document.getElementById('comprobanteList');
+    const total = data.comprobantes.reduce((s,c)=>s+Number(c.monto),0);
+    document.getElementById('comprobantesTotal').textContent = fmt(total);
     if(data.comprobantes.length===0){
       listEl.innerHTML = '<p class="empty-state" style="padding:12px 0;">Sin comprobantes guardados.</p>';
       return;
@@ -2345,6 +2360,8 @@ async function resolveLoginEmail(input){
 
   function renderEfectivo(){
     const listEl = document.getElementById('efectivoList');
+    const total = data.pagosEfectivo.reduce((s,p)=>s+Number(p.monto),0);
+    document.getElementById('efectivoTotal').textContent = fmt(total);
     if(data.pagosEfectivo.length===0){
       listEl.innerHTML = '<p class="empty-state" style="padding:12px 0;">Sin pagos en efectivo guardados.</p>';
       return;
