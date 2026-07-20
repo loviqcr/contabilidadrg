@@ -556,6 +556,8 @@
     <button class="btn logout-btn" id="logoutBtn" type="button">Cerrar sesión</button>
   </header>
 
+  <div id="dataLoadBanner" style="display:none;padding:10px 16px;border-radius:8px;margin:0 0 16px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;align-items:center;justify-content:space-between;gap:12px;"></div>
+
   <nav class="tabs">
     <button class="active" data-tab="resumen">Resumen</button>
     <button data-tab="movimientos">Movimientos</button>
@@ -1247,20 +1249,58 @@ async function resolveLoginEmail(input){
     return true;
   }
 
+  function sleep(ms){ return new Promise(resolve=>setTimeout(resolve, ms)); }
+
+  // Muestra un aviso de "cargando" o de error-con-reintentar en vez de
+  // dejar que la pantalla se vea en cero en silencio cuando falla la lectura
+  // (mala señal, etc.) — antes no había ninguna indicación de que algo
+  // había fallado.
+  function setLoadBanner(mode, message){
+    const banner = document.getElementById('dataLoadBanner');
+    if(mode==='hidden'){
+      banner.style.display = 'none';
+      banner.innerHTML = '';
+      return;
+    }
+    banner.style.display = 'flex';
+    if(mode==='loading'){
+      banner.style.background = 'var(--green-light)';
+      banner.style.color = 'var(--green-ink)';
+      banner.innerHTML = `<span>${message}</span>`;
+    } else {
+      banner.style.background = '#fdecea';
+      banner.style.color = 'var(--red)';
+      banner.innerHTML = `<span>${message}</span><button class="btn btn-danger" id="retryLoadBtn" type="button">Reintentar</button>`;
+      document.getElementById('retryLoadBtn').addEventListener('click', ()=>loadData());
+    }
+  }
+
   async function loadData(){
+    setLoadBanner('loading', 'Cargando datos...');
     data = defaultData();
-    try{
-      let snap = await getDoc(userDocRef());
-      if(await migrateToSharedIfNeeded(snap)) snap = await getDoc(userDocRef());
-      if(snap.exists()) data = { ...defaultData(), ...snap.data() };
-      const prodSnap = await getDocs(productsColRef());
-      data.products = [];
-      prodSnap.forEach(d=>data.products.push({ id: d.id, ...d.data() }));
-      data.products.sort((a,b)=>(a.order??0)-(b.order??0));
-      const compSnap = await getDocs(comprobantesColRef());
-      data.comprobantes = [];
-      compSnap.forEach(d=>data.comprobantes.push({ id: d.id, ...d.data() }));
-    }catch(e){ console.error('Error cargando datos', e); }
+    const attempts = 3;
+    let lastError = null;
+    for(let i=0; i<attempts; i++){
+      try{
+        let snap = await getDoc(userDocRef());
+        if(await migrateToSharedIfNeeded(snap)) snap = await getDoc(userDocRef());
+        if(snap.exists()) data = { ...defaultData(), ...snap.data() };
+        const prodSnap = await getDocs(productsColRef());
+        data.products = [];
+        prodSnap.forEach(d=>data.products.push({ id: d.id, ...d.data() }));
+        data.products.sort((a,b)=>(a.order??0)-(b.order??0));
+        const compSnap = await getDocs(comprobantesColRef());
+        data.comprobantes = [];
+        compSnap.forEach(d=>data.comprobantes.push({ id: d.id, ...d.data() }));
+        lastError = null;
+        break;
+      }catch(e){
+        lastError = e;
+        console.error(`Error cargando datos (intento ${i+1}/${attempts})`, e);
+        if(i<attempts-1) await sleep(800*(i+1));
+      }
+    }
+    setLoadBanner(lastError ? 'error' : 'hidden', lastError ? 'No se pudieron cargar los datos. Revisa tu conexión e intenta de nuevo.' : '');
     render();
   }
 
