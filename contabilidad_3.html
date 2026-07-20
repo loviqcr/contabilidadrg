@@ -2159,10 +2159,11 @@ async function resolveLoginEmail(input){
     p.stock -= cantidad;
     ensureGastoCategory(MERMA_CAT);
     const amount = (p.cost||0)*cantidad;
-    data.mermas.push({ id: uid(), productId: p.id, productName: p.name, cantidad, motivo, date: fecha });
+    const mermaId = uid();
+    data.mermas.push({ id: mermaId, productId: p.id, productName: p.name, cantidad, motivo, date: fecha });
     data.transactions.push({
       id: uid(), date: fecha, type:'gasto', desc: `Merma: ${cantidad} ${p.name} - ${motivo}`, cat: MERMA_CAT,
-      qty: cantidad, unitPrice: p.cost||0, amount
+      mermaId, qty: cantidad, unitPrice: p.cost||0, amount
     });
     saveData();
     saveProduct(p).catch(err=>alert('No se pudo actualizar el stock: ' + err.message));
@@ -2172,10 +2173,16 @@ async function resolveLoginEmail(input){
   });
 
   function removeMerma(id){
-    if(!confirm('¿Quitar este registro de merma? No repone el stock ni borra el gasto ya contabilizado.')) return;
-    data.mermas = data.mermas.filter(m=>m.id!==id);
+    const m = data.mermas.find(m=>m.id===id);
+    if(!m) return;
+    if(!confirm('¿Quitar este registro de merma? Se repone el stock y se elimina el gasto contabilizado.')) return;
+    const p = data.products.find(p=>p.id===m.productId);
+    if(p) p.stock += m.cantidad;
+    data.mermas = data.mermas.filter(mm=>mm.id!==id);
+    data.transactions = data.transactions.filter(t=>t.mermaId!==id);
     saveData();
-    renderMermas();
+    if(p) saveProduct(p).catch(err=>alert('No se pudo actualizar el stock: ' + err.message));
+    render();
   }
 
   function renderMermas(){
@@ -2215,10 +2222,11 @@ async function resolveLoginEmail(input){
     p.stock -= cantidad;
     ensureGastoCategory(REGALIA_CAT);
     const monto = (p.cost||0)*cantidad;
-    data.regalias.push({ id: uid(), productId: p.id, productName: p.name, cantidad, beneficiario, desc, monto, date: fecha });
+    const regaliaId = uid();
+    data.regalias.push({ id: regaliaId, productId: p.id, productName: p.name, cantidad, beneficiario, desc, monto, date: fecha });
     data.transactions.push({
       id: uid(), date: fecha, type:'gasto', desc: `Regalía a ${beneficiario}: ${cantidad} ${p.name} - ${desc}`, cat: REGALIA_CAT,
-      qty: cantidad, unitPrice: p.cost||0, amount: monto
+      regaliaId, qty: cantidad, unitPrice: p.cost||0, amount: monto
     });
     saveData();
     saveProduct(p).catch(err=>alert('No se pudo actualizar el stock: ' + err.message));
@@ -2228,10 +2236,16 @@ async function resolveLoginEmail(input){
   });
 
   function removeRegalia(id){
-    if(!confirm('¿Quitar este registro de regalía? No borra el gasto ya contabilizado.')) return;
-    data.regalias = data.regalias.filter(r=>r.id!==id);
+    const r = data.regalias.find(r=>r.id===id);
+    if(!r) return;
+    if(!confirm('¿Quitar este registro de regalía? Se repone el stock y se elimina el gasto contabilizado.')) return;
+    const p = data.products.find(p=>p.id===r.productId);
+    if(p) p.stock += r.cantidad;
+    data.regalias = data.regalias.filter(rr=>rr.id!==id);
+    data.transactions = data.transactions.filter(t=>t.regaliaId!==id);
     saveData();
-    renderRegalias();
+    if(p) saveProduct(p).catch(err=>alert('No se pudo actualizar el stock: ' + err.message));
+    render();
   }
 
   function renderRegalias(){
