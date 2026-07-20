@@ -574,12 +574,6 @@
 
     <!-- RESUMEN -->
     <div class="view active" id="view-resumen">
-      <div class="cat-item" style="margin-bottom:16px;">
-        <span style="display:flex;flex-direction:column;gap:2px;">
-          <strong style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);">Saldo real</strong>
-        </span>
-        <input type="number" id="saldoInicial" step="0.01" placeholder="0.00" style="width:140px;padding:8px 9px;border:1px solid var(--paper-line);border-radius:5px;font-family:'IBM Plex Mono',monospace;font-size:13.5px;background:var(--paper);color:var(--ink);text-align:right;">
-      </div>
       <div class="cards">
         <div class="card income">
           <div class="label">Ingresos totales</div>
@@ -1558,15 +1552,6 @@ async function resolveLoginEmail(input){
   // ---------- BIZ NAME ----------
   const bizInput = document.getElementById('bizName');
   bizInput.addEventListener('input', ()=>{ data.bizName = bizInput.value; saveData(); });
-
-  // ---------- SALDO INICIAL ----------
-  const saldoInicialInput = document.getElementById('saldoInicial');
-  saldoInicialInput.addEventListener('input', ()=>{
-    data.saldoInicial = parseFloat(saldoInicialInput.value) || 0;
-    data.saldoInicialFecha = todayLocal();
-    saveData();
-    renderSummary();
-  });
 
   // ---------- CATEGORY SELECT ----------
   function populateCatSelect(){
@@ -3067,7 +3052,6 @@ async function resolveLoginEmail(input){
   // ---------- MASTER RENDER ----------
   function render(){
     bizInput.value = data.bizName || '';
-    saldoInicialInput.value = data.saldoInicial != null ? data.saldoInicial : '';
     populateCatSelect();
     populateProdCatSelect();
     populateMonthFilter();
