@@ -1847,6 +1847,16 @@ async function resolveLoginEmail(input){
         id: uid(), date: fecha, type:'ingreso', desc: `Abono: ${d.desc}`, cat: d.cat,
         comercio: d.contraparte, deudaId: d.id, qty:1, unitPrice:monto, amount:monto
       });
+      // El costo de la venta a crédito se reconoce en la misma proporción
+      // que se va cobrando, no todo de una vez al vender.
+      if(d.costoTotal){
+        const costoAbono = d.costoTotal * (monto / d.monto);
+        ensureCogsCategory();
+        data.transactions.push({
+          id: uid(), date: fecha, type:'gasto', desc: `Costo de: ${d.desc}`, cat: COGS_CAT,
+          deudaId: d.id, qty:1, unitPrice:costoAbono, amount:costoAbono
+        });
+      }
     } else {
       data.transactions.push({
         id: uid(), date: fecha, type:'gasto', desc: `Abono: ${d.desc}`, cat: d.cat,
@@ -2545,9 +2555,13 @@ async function resolveLoginEmail(input){
     const amount = unitPrice*qty;
     const deudaId = aCredito ? uid() : null;
     if(aCredito){
+      // Ni el ingreso ni el costo se registran todavía — ambos se crean al
+      // abonar/pagar (ver addAbono), para que el Balance no se vea afectado
+      // por una venta a crédito hasta que de verdad entre o salga dinero.
       data.deudas.push({
         id: deudaId, tipo:'cobrar', contraparte: comercioNombre, desc, cat: p.cat,
-        monto: amount, date: today, pagado:false, abonos: []
+        monto: amount, date: today, pagado:false, abonos: [],
+        costoTotal: (p.cost||0)*qty
       });
     } else {
       data.transactions.push({
@@ -2555,14 +2569,14 @@ async function resolveLoginEmail(input){
         type:'ingreso', desc, cat: p.cat, comercio: comercioNombre || null,
         qty, unitPrice, amount
       });
-    }
-    if(p.cost && p.cost>0){
-      ensureCogsCategory();
-      data.transactions.push({
-        id: uid(), date: today,
-        type:'gasto', desc:`Costo de ${qtyLabel}${p.name}`, cat: COGS_CAT,
-        deudaId, qty, unitPrice:p.cost, amount:p.cost*qty
-      });
+      if(p.cost && p.cost>0){
+        ensureCogsCategory();
+        data.transactions.push({
+          id: uid(), date: today,
+          type:'gasto', desc:`Costo de ${qtyLabel}${p.name}`, cat: COGS_CAT,
+          qty, unitPrice:p.cost, amount:p.cost*qty
+        });
+      }
     }
     saveData();
     saveProduct(p).catch(err=>alert('No se pudo actualizar el stock: ' + err.message));
