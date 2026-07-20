@@ -1306,13 +1306,6 @@ async function resolveLoginEmail(input){
         let snap = await getDoc(userDocRef());
         if(await migrateToSharedIfNeeded(snap)) snap = await getDoc(userDocRef());
         if(snap.exists()) data = { ...defaultData(), ...snap.data() };
-        const prodSnap = await getDocs(productsColRef());
-        data.products = [];
-        prodSnap.forEach(d=>data.products.push({ id: d.id, ...d.data() }));
-        data.products.sort((a,b)=>(a.order??0)-(b.order??0));
-        const compSnap = await getDocs(comprobantesColRef());
-        data.comprobantes = [];
-        compSnap.forEach(d=>data.comprobantes.push({ id: d.id, ...d.data() }));
         lastError = null;
         break;
       }catch(e){
@@ -1327,6 +1320,29 @@ async function resolveLoginEmail(input){
       await saveData();
     }
     setLoadBanner(lastError ? 'error' : 'hidden', lastError ? 'No se pudieron cargar los datos. Revisa tu conexión e intenta de nuevo.' : '');
+    render();
+
+    // Productos y comprobantes (con sus fotos) se piden aparte y en paralelo,
+    // después de mostrar Resumen/Movimientos/Deudas — así lo que se ve
+    // primero no espera a que bajen todas las fotos guardadas.
+    let mediaError = null;
+    for(let i=0; i<attempts; i++){
+      try{
+        const [prodSnap, compSnap] = await Promise.all([getDocs(productsColRef()), getDocs(comprobantesColRef())]);
+        data.products = [];
+        prodSnap.forEach(d=>data.products.push({ id: d.id, ...d.data() }));
+        data.products.sort((a,b)=>(a.order??0)-(b.order??0));
+        data.comprobantes = [];
+        compSnap.forEach(d=>data.comprobantes.push({ id: d.id, ...d.data() }));
+        mediaError = null;
+        break;
+      }catch(e){
+        mediaError = e;
+        console.error(`Error cargando productos/comprobantes (intento ${i+1}/${attempts})`, e);
+        if(i<attempts-1) await sleep(800*(i+1));
+      }
+    }
+    if(mediaError) console.error('No se pudieron cargar productos/comprobantes tras varios intentos', mediaError);
     render();
   }
 
