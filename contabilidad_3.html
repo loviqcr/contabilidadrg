@@ -663,6 +663,16 @@
         <div class="spacer"></div>
         <button class="btn btn-ghost" id="exportCsv">Exportar CSV</button>
       </div>
+      <div class="cards cards-2" style="margin-bottom:16px;">
+        <div class="card income">
+          <div class="label">Ingresos (filtrado)</div>
+          <div class="value" id="txTotalIncome">₡0.00</div>
+        </div>
+        <div class="card expense">
+          <div class="label">Gastos (filtrado)</div>
+          <div class="value" id="txTotalExpense">₡0.00</div>
+        </div>
+      </div>
       <table>
         <thead><tr><th>Fecha</th><th>Descripción</th><th>Categoría</th><th style="text-align:right">Cant.</th><th style="text-align:right">Monto</th><th></th></tr></thead>
         <tbody id="txBody"></tbody>
@@ -2925,6 +2935,10 @@ async function resolveLoginEmail(input){
   // ---------- RENDER TABLE ----------
   function renderTxTable(){
     const rows = getFilteredTx();
+    const income = rows.filter(t=>t.type==='ingreso').reduce((s,t)=>s+Number(t.amount),0);
+    const expense = rows.filter(t=>t.type==='gasto').reduce((s,t)=>s+Number(t.amount),0);
+    document.getElementById('txTotalIncome').textContent = fmt(income);
+    document.getElementById('txTotalExpense').textContent = fmt(expense);
     const body = document.getElementById('txBody');
     if(rows.length===0){
       body.innerHTML = `<tr><td colspan="6"><div class="empty-state">Aún no hay movimientos registrados. Agrega el primero arriba.</div></td></tr>`;
