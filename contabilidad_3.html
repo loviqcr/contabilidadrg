@@ -574,6 +574,13 @@
 
     <!-- RESUMEN -->
     <div class="view active" id="view-resumen">
+      <div class="cat-item" style="margin-bottom:16px;">
+        <span style="display:flex;flex-direction:column;gap:2px;">
+          <strong style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);">Saldo real</strong>
+          <span style="font-family:'Inter',sans-serif;font-size:11.5px;color:var(--ink-soft);">Lo que en realidad tienes hoy. El Balance neto parte de aquí y solo suma/resta los ingresos y gastos (incluyendo pagos y cobros de deudas) que registres <span id="saldoInicialFechaLabel">de hoy</span> en adelante — no toca movimientos anteriores.</span>
+        </span>
+        <input type="number" id="saldoInicial" step="0.01" placeholder="0.00" style="width:140px;padding:8px 9px;border:1px solid var(--paper-line);border-radius:5px;font-family:'IBM Plex Mono',monospace;font-size:13.5px;background:var(--paper);color:var(--ink);text-align:right;">
+      </div>
       <div class="cards">
         <div class="card income">
           <div class="label">Ingresos totales</div>
@@ -1192,6 +1199,8 @@ async function resolveLoginEmail(input){
   function defaultData(){
     return {
       bizName: '',
+      saldoInicial: 0,
+      saldoInicialFecha: '',
       transactions: [],
       products: [],
       comercios: [],
@@ -1312,6 +1321,11 @@ async function resolveLoginEmail(input){
         console.error(`Error cargando datos (intento ${i+1}/${attempts})`, e);
         if(i<attempts-1) await sleep(800*(i+1));
       }
+    }
+    if(!lastError && !data.saldoInicialFecha){
+      data.saldoInicial = 87300;
+      data.saldoInicialFecha = todayLocal();
+      await saveData();
     }
     setLoadBanner(lastError ? 'error' : 'hidden', lastError ? 'No se pudieron cargar los datos. Revisa tu conexión e intenta de nuevo.' : '');
     render();
@@ -1539,6 +1553,17 @@ async function resolveLoginEmail(input){
   // ---------- BIZ NAME ----------
   const bizInput = document.getElementById('bizName');
   bizInput.addEventListener('input', ()=>{ data.bizName = bizInput.value; saveData(); });
+
+  // ---------- SALDO INICIAL ----------
+  const saldoInicialInput = document.getElementById('saldoInicial');
+  const saldoInicialFechaLabel = document.getElementById('saldoInicialFechaLabel');
+  saldoInicialInput.addEventListener('input', ()=>{
+    data.saldoInicial = parseFloat(saldoInicialInput.value) || 0;
+    data.saldoInicialFecha = todayLocal();
+    saldoInicialFechaLabel.textContent = 'del ' + formatDate(data.saldoInicialFecha);
+    saveData();
+    renderSummary();
+  });
 
   // ---------- CATEGORY SELECT ----------
   function populateCatSelect(){
@@ -2986,7 +3011,11 @@ async function resolveLoginEmail(input){
   function renderSummary(){
     const income = data.transactions.filter(t=>t.type==='ingreso').reduce((s,t)=>s+Number(t.amount),0);
     const expense = data.transactions.filter(t=>t.type==='gasto').reduce((s,t)=>s+Number(t.amount),0);
-    const balance = income - expense;
+    const cutoff = data.saldoInicialFecha || '';
+    const incomeSince = data.transactions.filter(t=>t.type==='ingreso' && t.date>=cutoff).reduce((s,t)=>s+Number(t.amount),0);
+    const expenseSince = data.transactions.filter(t=>t.type==='gasto' && t.date>=cutoff).reduce((s,t)=>s+Number(t.amount),0);
+    const saldoInicial = Number(data.saldoInicial) || 0;
+    const balance = saldoInicial + incomeSince - expenseSince;
 
     document.getElementById('totalIncome').textContent = fmt(income);
     document.getElementById('totalExpense').textContent = fmt(expense);
@@ -3016,6 +3045,8 @@ async function resolveLoginEmail(input){
   // ---------- MASTER RENDER ----------
   function render(){
     bizInput.value = data.bizName || '';
+    saldoInicialInput.value = data.saldoInicial != null ? data.saldoInicial : '';
+    saldoInicialFechaLabel.textContent = data.saldoInicialFecha ? ('del ' + formatDate(data.saldoInicialFecha)) : 'de hoy';
     populateCatSelect();
     populateProdCatSelect();
     populateMonthFilter();
