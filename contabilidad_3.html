@@ -2554,6 +2554,7 @@ async function resolveLoginEmail(input){
     deleteProductDoc(id).catch(err=>alert('No se pudo eliminar el producto: ' + err.message));
   }
 
+  const IVA_RATE = 0.13;
   const COGS_CAT = 'Costo de ventas';
   function ensureCogsCategory(){
     if(!data.categories.gasto.includes(COGS_CAT)){
@@ -2574,6 +2575,10 @@ async function resolveLoginEmail(input){
         <option value="detalle">Precio al detalle</option>
         <option value="mayor">Precio al por mayor</option>
       </select>
+      <select class="sell-iva-select" style="font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 8px;border:1px solid var(--paper-line);border-radius:5px;background:#fff;">
+        <option value="0">Sin IVA</option>
+        <option value="1">Con IVA (${(IVA_RATE*100).toFixed(0)}%)</option>
+      </select>
       ${data.comercios.length ? `
         <select class="sell-comercio-select" style="flex:1;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:6px 8px;border:1px solid var(--paper-line);border-radius:5px;background:#fff;">
           <option value="">Sin comercio / venta directa</option>
@@ -2591,17 +2596,18 @@ async function resolveLoginEmail(input){
       const qty = parseInt(actions.querySelector('.sell-qty-input').value, 10);
       const fecha = actions.querySelector('.sell-date-input').value || todayLocal();
       const priceType = actions.querySelector('.sell-pricetype-select').value;
+      const conIva = actions.querySelector('.sell-iva-select').value === '1';
       const comercioSelect = actions.querySelector('.sell-comercio-select');
       const comercio = comercioSelect ? comercioSelect.value : '';
       const creditoCheck = actions.querySelector('.sell-credito-check');
       const aCredito = creditoCheck ? creditoCheck.checked : false;
       if(!qty || qty<=0){ alert('Escribe una cantidad válida.'); return; }
       if(aCredito && !comercio){ alert('Elige un comercio para vender a crédito.'); return; }
-      confirmSale(id, comercio, qty, aCredito, priceType, fecha);
+      confirmSale(id, comercio, qty, aCredito, priceType, fecha, conIva);
     });
   }
 
-  function confirmSale(id, comercioNombre, qty, aCredito, priceType, fecha){
+  function confirmSale(id, comercioNombre, qty, aCredito, priceType, fecha, conIva){
     const p = data.products.find(p=>p.id===id);
     if(!p) return;
     if(qty>p.stock){ alert(`Solo hay ${p.stock} en existencia.`); return; }
@@ -2611,8 +2617,10 @@ async function resolveLoginEmail(input){
     const unitPrice = priceType==='detalle' ? (p.priceDetalle!=null ? p.priceDetalle : p.price)
       : priceType==='mayor' ? (p.priceDist!=null ? p.priceDist : p.price)
       : p.price;
+    const subtotal = unitPrice*qty;
+    const ivaAmount = conIva ? subtotal*IVA_RATE : 0;
+    const amount = subtotal + ivaAmount;
     const desc = comercioNombre ? `Venta de ${qtyLabel}${p.name} a ${comercioNombre}` : `Venta de ${qtyLabel}${p.name}`;
-    const amount = unitPrice*qty;
     const deudaId = aCredito ? uid() : null;
     if(aCredito){
       // Ni el ingreso ni el costo se registran todavía — ambos se crean al
@@ -2621,13 +2629,15 @@ async function resolveLoginEmail(input){
       data.deudas.push({
         id: deudaId, tipo:'cobrar', contraparte: comercioNombre, desc, cat: p.cat,
         monto: amount, date: today, pagado:false, abonos: [],
-        costoTotal: (p.cost||0)*qty
+        costoTotal: (p.cost||0)*qty,
+        conIva, subtotal, ivaAmount
       });
     } else {
       data.transactions.push({
         id: uid(), date: today,
         type:'ingreso', desc, cat: p.cat, comercio: comercioNombre || null,
-        qty, unitPrice, amount
+        qty, unitPrice, amount,
+        conIva, subtotal, ivaAmount
       });
       if(p.cost && p.cost>0){
         ensureCogsCategory();
