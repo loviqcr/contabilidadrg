@@ -1505,6 +1505,13 @@ async function resolveLoginEmail(input){
 
   function uid(){ return 'tx_' + Date.now() + '_' + Math.random().toString(36).slice(2,8); }
 
+  // Extrae el timestamp de creación embebido en el id (uid()) para desempatar
+  // movimientos con la misma fecha y mostrar primero el más reciente.
+  function idTimestamp(id){
+    const n = Number(String(id).split('_')[1]);
+    return Number.isFinite(n) ? n : 0;
+  }
+
   // Da la fecha de HOY en hora local (YYYY-MM-DD). No usar
   // new Date().toISOString() para esto: esa función siempre da la fecha en
   // UTC, y Costa Rica está a UTC-6, así que de 6pm en adelante ya marca el
@@ -2937,7 +2944,7 @@ async function resolveLoginEmail(input){
       .filter(t=> type==='todos' || t.type===type)
       .filter(t=> month==='todos' || t.date.slice(0,7)===month)
       .filter(t=> t.desc.toLowerCase().includes(search))
-      .sort((a,b)=> b.date.localeCompare(a.date));
+      .sort((a,b)=> b.date.localeCompare(a.date) || idTimestamp(b.id)-idTimestamp(a.id));
   }
 
   // ---------- RENDER TABLE ----------
@@ -2957,6 +2964,7 @@ async function resolveLoginEmail(input){
         <td class="tx-date-cell" style="white-space:nowrap;">
           <span class="tx-date-display">${formatDate(t.date)}</span>
           <button class="btn btn-ghost" style="padding:2px 6px;font-size:10px;margin-left:4px;" data-edit-date="${t.id}">✎</button>
+          ${formatTime(t.id) ? `<br><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-soft);">${formatTime(t.id)}</span>` : ''}
         </td>
         <td>${escapeHtml(t.desc)}${t.comercio ? `<br><span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-soft);">→ ${escapeHtml(t.comercio)}</span>` : ''}</td>
         <td class="cat"><span class="chip ${t.type==='gasto'?'expense':''}">${escapeHtml(t.cat)}</span></td>
@@ -2999,9 +3007,17 @@ async function resolveLoginEmail(input){
     return `${day}/${m}/${y}`;
   }
 
+  // Hora de creación del movimiento, tomada del timestamp embebido en el id
+  // (no se guarda hora aparte). Si el id no trae timestamp, no muestra nada.
+  function formatTime(id){
+    const ts = idTimestamp(id);
+    if(!ts) return '';
+    return new Date(ts).toLocaleTimeString('es-CR', {hour:'2-digit', minute:'2-digit'});
+  }
+
   // ---------- RECENT (resumen tab) ----------
   function renderRecent(){
-    const rows = [...data.transactions].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6);
+    const rows = [...data.transactions].sort((a,b)=>b.date.localeCompare(a.date) || idTimestamp(b.id)-idTimestamp(a.id)).slice(0,6);
     const body = document.getElementById('recentBody');
     if(rows.length===0){
       body.innerHTML = `<tr><td colspan="4"><div class="empty-state">Sin movimientos todavía</div></td></tr>`;
@@ -3009,7 +3025,7 @@ async function resolveLoginEmail(input){
     }
     body.innerHTML = rows.map(t=>`
       <tr>
-        <td>${formatDate(t.date)}</td>
+        <td style="white-space:nowrap;">${formatDate(t.date)}${formatTime(t.id) ? `<br><span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-soft);">${formatTime(t.id)}</span>` : ''}</td>
         <td>${escapeHtml(t.desc)}</td>
         <td><span class="chip ${t.type==='gasto'?'expense':''}">${escapeHtml(t.cat)}</span></td>
         <td class="amount ${t.type==='gasto'?'expense':'income'}">${t.type==='gasto'?'-':'+'}${fmt(t.amount)}</td>
