@@ -1627,6 +1627,18 @@ async function resolveLoginEmail(input){
     render();
   }
 
+  // Movimientos generados automáticamente (venta de inventario, merma,
+  // regalía, abono de deuda) no se pueden borrar desde Movimientos porque
+  // dejarían el stock o el saldo de la deuda desincronizados. Se gestionan
+  // desde su pestaña de origen, que sí revierte todo correctamente.
+  function txLockReason(t){
+    if(t.mermaId) return 'Vinculado a una merma — quítala desde la pestaña Mermas.';
+    if(t.regaliaId) return 'Vinculado a una regalía — quítala desde la pestaña Regalías.';
+    if(t.deudaId) return 'Vinculado a un abono de deuda — no se puede eliminar por separado.';
+    if(t.saleId) return 'Vinculado a una venta de inventario — no se puede eliminar por separado.';
+    return null;
+  }
+
   // ---------- CATEGORIES CRUD ----------
   function addCategory(type, inputId){
     const input = document.getElementById(inputId);
@@ -2640,10 +2652,14 @@ async function resolveLoginEmail(input){
         conIva, subtotal, ivaAmount
       });
     } else {
+      // saleId enlaza el ingreso con su costo de ventas para que Movimientos
+      // no permita borrar uno sin el otro (dejaría el costo huérfano o el
+      // stock ya descontado sin su ingreso).
+      const saleId = uid();
       data.transactions.push({
         id: uid(), date: today,
         type:'ingreso', desc, cat: p.cat, comercio: comercioNombre || null,
-        qty, unitPrice, amount,
+        qty, unitPrice, amount, saleId,
         conIva, subtotal, ivaAmount
       });
       if(p.cost && p.cost>0){
@@ -2651,7 +2667,7 @@ async function resolveLoginEmail(input){
         data.transactions.push({
           id: uid(), date: today,
           type:'gasto', desc:`Costo de ${qtyLabel}${p.name}`, cat: COGS_CAT,
-          qty, unitPrice:p.cost, amount:p.cost*qty
+          qty, unitPrice:p.cost, amount:p.cost*qty, saleId
         });
       }
     }
@@ -2970,7 +2986,9 @@ async function resolveLoginEmail(input){
         <td class="cat"><span class="chip ${t.type==='gasto'?'expense':''}">${escapeHtml(t.cat)}</span></td>
         <td class="amount">${t.qty || 1}</td>
         <td class="amount ${t.type==='gasto'?'expense':'income'}">${t.type==='gasto'?'-':'+'}${fmt(t.amount)}</td>
-        <td><button class="btn btn-danger" data-del="${t.id}">Eliminar</button></td>
+        <td>${txLockReason(t)
+          ? `<button class="btn btn-danger" disabled title="${escapeHtml(txLockReason(t))}" style="opacity:.45;cursor:not-allowed;">Eliminar</button>`
+          : `<button class="btn btn-danger" data-del="${t.id}">Eliminar</button>`}</td>
       </tr>
     `).join('');
     body.querySelectorAll('[data-del]').forEach(b=>{
