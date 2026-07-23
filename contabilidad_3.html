@@ -1195,6 +1195,10 @@ async function resolveLoginEmail(input){
 (function(){
   let currentUser = null;
 
+  function isAdmin(){
+    return !!currentUser && ADMIN_EMAILS.includes(currentUser.email);
+  }
+
   function defaultData(){
     return {
       bizName: '',
@@ -1621,10 +1625,41 @@ async function resolveLoginEmail(input){
     render();
   });
 
+  // Toast con "Deshacer": la acción se aplica de una vez en pantalla, pero
+  // solo se guarda en Firestore si pasan `duration` ms sin que el usuario
+  // toque Deshacer — así una eliminación por error nunca llega a persistirse.
+  function showUndoToast(message, {onUndo, onExpire}, duration=6000){
+    const prev = document.getElementById('undoToast');
+    if(prev){ prev._finish(false); prev.remove(); }
+    const toast = document.createElement('div');
+    toast.id = 'undoToast';
+    toast.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#2a2a2a;color:#fff;padding:12px 18px;border-radius:8px;font-family:\'IBM Plex Mono\',monospace;font-size:12.5px;display:flex;align-items:center;gap:16px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.3);';
+    toast.innerHTML = `<span>${escapeHtml(message)}</span><button type="button" style="background:none;border:1px solid #fff;color:#fff;padding:4px 12px;border-radius:5px;cursor:pointer;font-family:inherit;font-size:inherit;">Deshacer</button>`;
+    document.body.appendChild(toast);
+    let done = false;
+    const finish = (undone)=>{
+      if(done) return;
+      done = true;
+      clearTimeout(timer);
+      toast.remove();
+      if(undone) onUndo(); else onExpire();
+    };
+    toast._finish = finish;
+    const timer = setTimeout(()=>finish(false), duration);
+    toast.querySelector('button').addEventListener('click', ()=>finish(true));
+  }
+
   function deleteTx(id){
-    data.transactions = data.transactions.filter(t=>t.id!==id);
-    saveData();
+    if(!isAdmin()){ alert('Solo el administrador puede eliminar movimientos.'); return; }
+    const t = data.transactions.find(t=>t.id===id);
+    if(!t) return;
+    if(txLockReason(t)){ alert(txLockReason(t)); return; }
+    data.transactions = data.transactions.filter(tx=>tx.id!==id);
     render();
+    showUndoToast('Movimiento eliminado.', {
+      onUndo: ()=>{ data.transactions.push(t); render(); },
+      onExpire: ()=> saveData()
+    });
   }
 
   // Movimientos generados automáticamente (venta de inventario, merma,
@@ -1632,6 +1667,7 @@ async function resolveLoginEmail(input){
   // dejarían el stock o el saldo de la deuda desincronizados. Se gestionan
   // desde su pestaña de origen, que sí revierte todo correctamente.
   function txLockReason(t){
+    if(!isAdmin()) return 'Solo el administrador puede eliminar movimientos.';
     if(t.mermaId) return 'Vinculado a una merma — quítala desde la pestaña Mermas.';
     if(t.regaliaId) return 'Vinculado a una regalía — quítala desde la pestaña Regalías.';
     if(t.deudaId) return 'Vinculado a un abono de deuda — no se puede eliminar por separado.';
@@ -2992,9 +3028,7 @@ async function resolveLoginEmail(input){
       </tr>
     `).join('');
     body.querySelectorAll('[data-del]').forEach(b=>{
-      b.addEventListener('click', ()=>{
-        if(confirm('¿Eliminar este movimiento?')) deleteTx(b.dataset.del);
-      });
+      b.addEventListener('click', ()=> deleteTx(b.dataset.del));
     });
     body.querySelectorAll('[data-edit-date]').forEach(b=>{
       b.addEventListener('click', ()=>editTxDate(b.dataset.editDate, b));
