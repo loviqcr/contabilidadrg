@@ -976,10 +976,14 @@
     <!-- COMPROBANTES -->
     <div class="view" id="view-comprobantes">
       <div class="section-title"><span class="num">§1</span> Comprobantes de pago</div>
-      <div class="cards cards-2">
+      <div class="cards">
         <div class="card income">
-          <div class="label">Total en comprobantes</div>
+          <div class="label">Comprobantes de ingreso</div>
           <div class="value" id="comprobantesTotal">₡0.00</div>
+        </div>
+        <div class="card expense">
+          <div class="label">Comprobantes de gasto</div>
+          <div class="value" id="comprobantesGastoTotal">₡0.00</div>
         </div>
         <div class="card income">
           <div class="label">Total en efectivo</div>
@@ -991,7 +995,7 @@
       </p>
       <div class="cat-cols">
         <div class="cat-col">
-          <h3>Comprobante con foto</h3>
+          <h3>Comprobante de ingreso</h3>
           <form id="comprobanteForm" class="prod-form">
             <div class="prod-form-img">
               <label class="img-drop" id="comprobanteImgDrop">
@@ -1027,6 +1031,43 @@
             </div>
           </form>
           <div class="cat-list" id="comprobanteList"></div>
+
+          <h3 style="margin-top:22px;">Comprobante de gasto</h3>
+          <form id="comprobanteGastoForm" class="prod-form">
+            <div class="prod-form-img">
+              <label class="img-drop" id="comprobanteGastoImgDrop">
+                <img id="comprobanteGastoImgPreview" style="display:none;">
+                <span id="comprobanteGastoImgDropLabel" class="img-drop-label">+ Foto</span>
+                <input type="file" id="comprobanteGastoImage" accept="image/*" style="display:none;">
+              </label>
+            </div>
+            <div class="prod-form-fields">
+              <div class="form-row">
+                <div>
+                  <label>Proveedor / Concepto</label>
+                  <input type="text" id="comprobanteGastoCliente" placeholder="Ej. Ferretería López">
+                </div>
+                <div>
+                  <label>Fecha</label>
+                  <input type="date" id="comprobanteGastoFecha">
+                </div>
+              </div>
+              <div class="form-row">
+                <div>
+                  <label>Descripción</label>
+                  <input type="text" id="comprobanteGastoDesc" placeholder="Ej. Factura de suministros">
+                </div>
+                <div>
+                  <label>Monto (₡)</label>
+                  <input type="number" id="comprobanteGastoMonto" step="0.01" min="0" placeholder="0.00">
+                </div>
+              </div>
+              <div class="form-row-actions">
+                <button type="submit" class="btn btn-primary">Guardar comprobante de gasto</button>
+              </div>
+            </div>
+          </form>
+          <div class="cat-list" id="comprobanteGastoList"></div>
         </div>
         <div class="cat-col">
           <h3>Efectivo (manual)</h3>
@@ -2333,43 +2374,52 @@ async function resolveLoginEmail(input){
   }
 
   // ---------- COMPROBANTES DE PAGO ----------
-  let pendingComprobanteImage = null;
-
-  const comprobanteImageInput = document.getElementById('comprobanteImage');
-  comprobanteImageInput.addEventListener('change', (e)=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    const dropLabel = document.getElementById('comprobanteImgDropLabel');
-    dropLabel.textContent = 'Procesando...';
-    const reader = new FileReader();
-    reader.onerror = ()=>{
-      alert('No se pudo leer la foto. Intenta con otra imagen.');
-      dropLabel.textContent = '+ Foto';
-    };
-    reader.onload = (ev)=>{
-      const img = new Image();
-      img.onerror = ()=>{
-        alert('Ese archivo no se pudo abrir como imagen (formato no compatible). Prueba tomando la foto de nuevo o eligiendo otra.');
+  // Maneja la foto (redimensionar a data URL) para cualquier input tipo
+  // "comprobante": lo comparten el formulario de ingreso y el de gasto.
+  function setupComprobanteImageInput(inputId, dropLabelId, previewId, onReady){
+    const input = document.getElementById(inputId);
+    input.addEventListener('change', (e)=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      const dropLabel = document.getElementById(dropLabelId);
+      dropLabel.textContent = 'Procesando...';
+      const reader = new FileReader();
+      reader.onerror = ()=>{
+        alert('No se pudo leer la foto. Intenta con otra imagen.');
         dropLabel.textContent = '+ Foto';
       };
-      img.onload = ()=>{
-        const maxDim = 400;
-        let w = img.width, h = img.height;
-        if(w>h && w>maxDim){ h = h*(maxDim/w); w = maxDim; }
-        else if(h>maxDim){ w = w*(maxDim/h); h = maxDim; }
-        const canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img,0,0,w,h);
-        pendingComprobanteImage = canvas.toDataURL('image/jpeg', 0.75);
-        const preview = document.getElementById('comprobanteImgPreview');
-        preview.src = pendingComprobanteImage;
-        preview.style.display = 'block';
-        dropLabel.style.display = 'none';
+      reader.onload = (ev)=>{
+        const img = new Image();
+        img.onerror = ()=>{
+          alert('Ese archivo no se pudo abrir como imagen (formato no compatible). Prueba tomando la foto de nuevo o eligiendo otra.');
+          dropLabel.textContent = '+ Foto';
+        };
+        img.onload = ()=>{
+          const maxDim = 400;
+          let w = img.width, h = img.height;
+          if(w>h && w>maxDim){ h = h*(maxDim/w); w = maxDim; }
+          else if(h>maxDim){ w = w*(maxDim/h); h = maxDim; }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img,0,0,w,h);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+          const preview = document.getElementById(previewId);
+          preview.src = dataUrl;
+          preview.style.display = 'block';
+          dropLabel.style.display = 'none';
+          onReady(dataUrl);
+        };
+        img.src = ev.target.result;
       };
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
+      reader.readAsDataURL(file);
+    });
+  }
+
+  let pendingComprobanteImage = null;
+  setupComprobanteImageInput('comprobanteImage', 'comprobanteImgDropLabel', 'comprobanteImgPreview', url=>{ pendingComprobanteImage = url; });
+
+  let pendingComprobanteGastoImage = null;
+  setupComprobanteImageInput('comprobanteGastoImage', 'comprobanteGastoImgDropLabel', 'comprobanteGastoImgPreview', url=>{ pendingComprobanteGastoImage = url; });
 
   function resetComprobanteForm(){
     document.getElementById('comprobanteForm').reset();
@@ -2381,6 +2431,16 @@ async function resolveLoginEmail(input){
     document.getElementById('comprobanteFecha').value = todayLocal();
   }
 
+  function resetComprobanteGastoForm(){
+    document.getElementById('comprobanteGastoForm').reset();
+    pendingComprobanteGastoImage = null;
+    document.getElementById('comprobanteGastoImgPreview').style.display = 'none';
+    document.getElementById('comprobanteGastoImgPreview').src = '';
+    document.getElementById('comprobanteGastoImgDropLabel').style.display = 'block';
+    document.getElementById('comprobanteGastoImgDropLabel').textContent = '+ Foto';
+    document.getElementById('comprobanteGastoFecha').value = todayLocal();
+  }
+
   document.getElementById('comprobanteForm').addEventListener('submit', async (e)=>{
     e.preventDefault();
     const cliente = document.getElementById('comprobanteCliente').value.trim();
@@ -2389,7 +2449,7 @@ async function resolveLoginEmail(input){
     const fecha = document.getElementById('comprobanteFecha').value || todayLocal();
     if(!cliente){ alert('Escribe el nombre del cliente.'); return; }
     if(!desc || isNaN(monto) || monto<=0) return;
-    const comprobante = { id: uid(), cliente, desc, monto, date: fecha, image: pendingComprobanteImage || null };
+    const comprobante = { id: uid(), tipo:'ingreso', cliente, desc, monto, date: fecha, image: pendingComprobanteImage || null };
     data.comprobantes.push(comprobante);
     try{
       await saveComprobante(comprobante);
@@ -2401,6 +2461,26 @@ async function resolveLoginEmail(input){
     renderComprobantes();
   });
 
+  document.getElementById('comprobanteGastoForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const cliente = document.getElementById('comprobanteGastoCliente').value.trim();
+    const desc = document.getElementById('comprobanteGastoDesc').value.trim();
+    const monto = parseFloat(document.getElementById('comprobanteGastoMonto').value);
+    const fecha = document.getElementById('comprobanteGastoFecha').value || todayLocal();
+    if(!cliente){ alert('Escribe el proveedor o concepto.'); return; }
+    if(!desc || isNaN(monto) || monto<=0) return;
+    const comprobante = { id: uid(), tipo:'gasto', cliente, desc, monto, date: fecha, image: pendingComprobanteGastoImage || null };
+    data.comprobantes.push(comprobante);
+    try{
+      await saveComprobante(comprobante);
+    }catch(err){
+      alert('No se pudo guardar el comprobante: ' + err.message);
+      return;
+    }
+    resetComprobanteGastoForm();
+    renderComprobantes();
+  });
+
   function removeComprobante(id){
     if(!confirm('¿Quitar este comprobante?')) return;
     data.comprobantes = data.comprobantes.filter(c=>c.id!==id);
@@ -2408,15 +2488,17 @@ async function resolveLoginEmail(input){
     deleteComprobanteDoc(id).catch(err=>alert('No se pudo eliminar el comprobante: ' + err.message));
   }
 
-  function renderComprobantes(){
-    const listEl = document.getElementById('comprobanteList');
-    const total = data.comprobantes.reduce((s,c)=>s+Number(c.monto),0);
-    document.getElementById('comprobantesTotal').textContent = fmt(total);
-    if(data.comprobantes.length===0){
-      listEl.innerHTML = '<p class="empty-state" style="padding:12px 0;">Sin comprobantes guardados.</p>';
+  // Registros guardados antes de que existiera el campo `tipo` son todos de
+  // ingreso (era lo único que se podía guardar en Comprobantes).
+  function renderComprobanteGroup(listEl, totalElId, tipo){
+    const items = data.comprobantes.filter(c=> tipo==='gasto' ? c.tipo==='gasto' : c.tipo!=='gasto');
+    const total = items.reduce((s,c)=>s+Number(c.monto),0);
+    document.getElementById(totalElId).textContent = fmt(total);
+    if(items.length===0){
+      listEl.innerHTML = `<p class="empty-state" style="padding:12px 0;">Sin comprobantes de ${tipo==='gasto'?'gasto':'ingreso'} guardados.</p>`;
       return;
     }
-    const sorted = [...data.comprobantes].sort((a,b)=>b.date.localeCompare(a.date));
+    const sorted = [...items].sort((a,b)=>b.date.localeCompare(a.date));
     listEl.innerHTML = sorted.map(c=>`
       <div class="cat-item">
         <span style="display:flex;align-items:center;gap:10px;">
@@ -2432,6 +2514,11 @@ async function resolveLoginEmail(input){
     listEl.querySelectorAll('[data-remove-comprobante]').forEach(b=>{
       b.addEventListener('click', ()=>removeComprobante(b.dataset.removeComprobante));
     });
+  }
+
+  function renderComprobantes(){
+    renderComprobanteGroup(document.getElementById('comprobanteList'), 'comprobantesTotal', 'ingreso');
+    renderComprobanteGroup(document.getElementById('comprobanteGastoList'), 'comprobantesGastoTotal', 'gasto');
   }
 
   document.getElementById('efectivoForm').addEventListener('submit', (e)=>{
@@ -3174,6 +3261,7 @@ async function resolveLoginEmail(input){
   document.getElementById('mermaFecha').value = todayLocal();
   document.getElementById('regaliaFecha').value = todayLocal();
   document.getElementById('comprobanteFecha').value = todayLocal();
+  document.getElementById('comprobanteGastoFecha').value = todayLocal();
   document.getElementById('efectivoFecha').value = todayLocal();
 })();
 
