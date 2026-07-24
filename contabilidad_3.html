@@ -2032,18 +2032,24 @@ async function resolveLoginEmail(input){
 
     // Abonos creados con la versión actual quedan marcados con abonoId
     // en sus movimientos. Los abonos viejos (de antes de este cambio) no
-    // lo tienen, así que se emparejan por deudaId + fecha + monto (la
-    // venta por el monto del abono, y su costo proporcional si aplica).
+    // lo tienen, y su fecha puede haberse desincronizado si luego se editó
+    // la fecha de la deuda (eso actualiza los movimientos, no el abono).
+    // Por eso se emparejan por orden de creación: cada abono de esta deuda
+    // generó siempre la misma cantidad de movimientos (1 o 2, según si
+    // tiene costoTotal), en el mismo orden en que se crearon los abonos.
     let linked = data.transactions.filter(t=>t.abonoId===abonoId);
     if(linked.length===0){
-      const monto = Number(abono.monto);
-      const costoAbono = d.costoTotal ? d.costoTotal * (monto / d.monto) : null;
-      linked = data.transactions.filter(t=>{
-        if(t.deudaId!==d.id || t.date!==abono.date || t.abonoId) return false;
-        if(Math.abs(Number(t.amount)-monto)<0.01) return true;
-        if(costoAbono!=null && Math.abs(Number(t.amount)-costoAbono)<0.01) return true;
-        return false;
-      });
+      const legacyAbonos = (d.abonos||[])
+        .filter(a=>!data.transactions.some(t=>t.abonoId===a.id))
+        .sort((a,b)=>idTimestamp(a.id)-idTimestamp(b.id));
+      const idx = legacyAbonos.findIndex(a=>a.id===abonoId);
+      if(idx>=0){
+        const legacyTx = data.transactions
+          .filter(t=>t.deudaId===d.id && !t.abonoId)
+          .sort((a,b)=>idTimestamp(a.id)-idTimestamp(b.id));
+        const perAbono = (d.costoTotal && d.tipo==='cobrar') ? 2 : 1;
+        linked = legacyTx.slice(idx*perAbono, idx*perAbono+perAbono);
+      }
     }
     const linkedIds = new Set(linked.map(t=>t.id));
 
