@@ -2022,16 +2022,33 @@ async function resolveLoginEmail(input){
   }
 
   // Deshace un abono puntual: quita el registro y los movimientos que
-  // generó (identificados por abonoId), y reabre la deuda si ya estaba
-  // marcada como pagada.
+  // generó, y reabre la deuda si ya estaba marcada como pagada.
   function removeAbono(deudaId, abonoId){
     const d = data.deudas.find(d=>d.id===deudaId);
     if(!d) return;
     const abono = (d.abonos||[]).find(a=>a.id===abonoId);
     if(!abono) return;
     if(!confirm(`¿Quitar el abono de ${fmt(Number(abono.monto))} del ${formatDate(abono.date)}? Se eliminan los movimientos que generó.`)) return;
+
+    // Abonos creados con la versión actual quedan marcados con abonoId
+    // en sus movimientos. Los abonos viejos (de antes de este cambio) no
+    // lo tienen, así que se emparejan por deudaId + fecha + monto (la
+    // venta por el monto del abono, y su costo proporcional si aplica).
+    let linked = data.transactions.filter(t=>t.abonoId===abonoId);
+    if(linked.length===0){
+      const monto = Number(abono.monto);
+      const costoAbono = d.costoTotal ? d.costoTotal * (monto / d.monto) : null;
+      linked = data.transactions.filter(t=>{
+        if(t.deudaId!==d.id || t.date!==abono.date || t.abonoId) return false;
+        if(Math.abs(Number(t.amount)-monto)<0.01) return true;
+        if(costoAbono!=null && Math.abs(Number(t.amount)-costoAbono)<0.01) return true;
+        return false;
+      });
+    }
+    const linkedIds = new Set(linked.map(t=>t.id));
+
     d.abonos = d.abonos.filter(a=>a.id!==abonoId);
-    data.transactions = data.transactions.filter(t=>t.abonoId!==abonoId);
+    data.transactions = data.transactions.filter(t=>!linkedIds.has(t.id));
     if(deudaSaldo(d) > 0.01){
       d.pagado = false;
       d.fechaPago = null;
