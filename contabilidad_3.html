@@ -2023,6 +2023,24 @@ async function resolveLoginEmail(input){
     render();
   }
 
+  // Elimina una deuda completa. Si nunca tuvo abonos, no hay movimientos
+  // que tocar (el ingreso/gasto de una venta a crédito solo se registra al
+  // abonar — ver confirmSale), así que el saldo/balance no se ve afectado.
+  // Si ya tiene abonos, primero hay que quitarlos (botón "Quitar" en
+  // Abonado: ...) para no dejar movimientos huérfanos.
+  function deleteDeuda(id){
+    const d = data.deudas.find(d=>d.id===id);
+    if(!d) return;
+    if((d.abonos||[]).length>0){
+      alert('Esta deuda ya tiene abonos registrados. Quítalos primero (haz clic en "Abonado: ..." y usa "Quitar" en cada uno) y luego podrás eliminarla.');
+      return;
+    }
+    if(!confirm(`¿Eliminar la deuda "${d.desc}" de ${fmt(Number(d.monto))} con ${d.contraparte}? Esta acción no se puede deshacer.`)) return;
+    data.deudas = data.deudas.filter(dd=>dd.id!==id);
+    saveData();
+    render();
+  }
+
   // Deshace un abono puntual: quita el registro y los movimientos que
   // generó, y reabre la deuda si ya estaba marcada como pagada.
   function removeAbono(deudaId, abonoId){
@@ -2146,6 +2164,7 @@ async function resolveLoginEmail(input){
                   <button class="btn btn-ghost" style="padding:5px 10px;font-size:10.5px;" data-abonar-deuda="${escapeHtml(d.id)}">Abonar</button>
                   <button class="btn btn-primary" style="padding:5px 10px;font-size:10.5px;" data-pagar-deuda="${escapeHtml(d.id)}">Marcar pagada</button>
                   `}
+                  <button class="btn btn-danger" data-delete-deuda="${escapeHtml(d.id)}">Eliminar</button>
                 </span>
               </div>
               ${abonado>0 ? `
@@ -2180,6 +2199,12 @@ async function resolveLoginEmail(input){
       b.addEventListener('click', (e)=>{
         e.stopPropagation();
         abonarUI(b.dataset.abonarDeuda, b);
+      });
+    });
+    listEl.querySelectorAll('[data-delete-deuda]').forEach(b=>{
+      b.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        deleteDeuda(b.dataset.deleteDeuda);
       });
     });
     listEl.querySelectorAll('[data-edit-deuda-date]').forEach(b=>{
