@@ -895,6 +895,10 @@
         <div class="cat-list" id="proveedorList" style="margin-bottom:24px;"></div>
       </div>
 
+      <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span><span class="num">§</span> Deudas</span>
+        <button class="btn btn-ghost" id="deudaTogglePagadasBtn" style="padding:5px 10px;font-size:10.5px;">Ver pagadas</button>
+      </div>
       <div id="deudaList"></div>
     </div>
 
@@ -1858,6 +1862,13 @@ async function resolveLoginEmail(input){
 
   // ---------- DEUDAS (por cobrar / por pagar) ----------
   let deudaSubtab = 'cobrar';
+  let deudaShowPagadas = false;
+
+  document.getElementById('deudaTogglePagadasBtn').addEventListener('click', (btn)=>{
+    deudaShowPagadas = !deudaShowPagadas;
+    document.getElementById('deudaTogglePagadasBtn').textContent = deudaShowPagadas ? 'Ver pendientes' : 'Ver pagadas';
+    renderDeudas();
+  });
 
   document.querySelectorAll('.subtabs [data-subtab]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
@@ -1979,11 +1990,12 @@ async function resolveLoginEmail(input){
     if(!monto || monto<=0){ alert('Escribe un monto válido.'); return; }
     if(monto > saldo + 0.01){ alert(`El abono no puede ser mayor al saldo pendiente (${fmt(saldo)}).`); return; }
     if(!d.abonos) d.abonos = [];
-    d.abonos.push({ id: uid(), monto, date: fecha });
+    const abonoId = uid();
+    d.abonos.push({ id: abonoId, monto, date: fecha });
     if(d.tipo==='cobrar'){
       data.transactions.push({
         id: uid(), date: fecha, type:'ingreso', desc: `Abono: ${d.desc}`, cat: d.cat,
-        comercio: d.contraparte, deudaId: d.id, qty:1, unitPrice:monto, amount:monto
+        comercio: d.contraparte, deudaId: d.id, abonoId, qty:1, unitPrice:monto, amount:monto
       });
       // El costo de la venta a crédito se reconoce en la misma proporción
       // que se va cobrando, no todo de una vez al vender.
@@ -1992,18 +2004,37 @@ async function resolveLoginEmail(input){
         ensureCogsCategory();
         data.transactions.push({
           id: uid(), date: fecha, type:'gasto', desc: `Costo de: ${d.desc}`, cat: COGS_CAT,
-          deudaId: d.id, qty:1, unitPrice:costoAbono, amount:costoAbono
+          deudaId: d.id, abonoId, qty:1, unitPrice:costoAbono, amount:costoAbono
         });
       }
     } else {
       data.transactions.push({
         id: uid(), date: fecha, type:'gasto', desc: `Abono: ${d.desc}`, cat: d.cat,
-        comercio: d.contraparte, deudaId: d.id, qty:1, unitPrice:monto, amount:monto
+        comercio: d.contraparte, deudaId: d.id, abonoId, qty:1, unitPrice:monto, amount:monto
       });
     }
     if(deudaSaldo(d) <= 0.01){
       d.pagado = true;
       d.fechaPago = fecha;
+    }
+    saveData();
+    render();
+  }
+
+  // Deshace un abono puntual: quita el registro y los movimientos que
+  // generó (identificados por abonoId), y reabre la deuda si ya estaba
+  // marcada como pagada.
+  function removeAbono(deudaId, abonoId){
+    const d = data.deudas.find(d=>d.id===deudaId);
+    if(!d) return;
+    const abono = (d.abonos||[]).find(a=>a.id===abonoId);
+    if(!abono) return;
+    if(!confirm(`¿Quitar el abono de ${fmt(Number(abono.monto))} del ${formatDate(abono.date)}? Se eliminan los movimientos que generó.`)) return;
+    d.abonos = d.abonos.filter(a=>a.id!==abonoId);
+    data.transactions = data.transactions.filter(t=>t.abonoId!==abonoId);
+    if(deudaSaldo(d) > 0.01){
+      d.pagado = false;
+      d.fechaPago = null;
     }
     saveData();
     render();
@@ -2024,14 +2055,14 @@ async function resolveLoginEmail(input){
     const contrapartesLabelEl = document.getElementById('deudaContrapartesLabel');
     const listEl = document.getElementById('deudaList');
 
-    const pendientes = data.deudas.filter(d=>d.tipo===deudaSubtab && !d.pagado);
-    const total = pendientes.reduce((s,d)=>s+deudaSaldo(d),0);
+    const pendientes = data.deudas.filter(d=>d.tipo===deudaSubtab && (deudaShowPagadas ? d.pagado : !d.pagado));
+    const total = deudaShowPagadas ? pendientes.reduce((s,d)=>s+Number(d.monto),0) : pendientes.reduce((s,d)=>s+deudaSaldo(d),0);
     const contraparteLabel = deudaSubtab==='cobrar' ? 'comercios' : 'proveedores';
 
-    totalLabelEl.textContent = deudaSubtab==='cobrar' ? 'Total por cobrar' : 'Total por pagar';
+    totalLabelEl.textContent = deudaShowPagadas ? 'Total pagado' : (deudaSubtab==='cobrar' ? 'Total por cobrar' : 'Total por pagar');
     totalEl.textContent = fmt(total);
     totalEl.style.color = deudaSubtab==='cobrar' ? 'var(--green-ink)' : 'var(--red)';
-    contrapartesLabelEl.textContent = `${contraparteLabel[0].toUpperCase()}${contraparteLabel.slice(1)} con saldo`;
+    contrapartesLabelEl.textContent = deudaShowPagadas ? `${contraparteLabel[0].toUpperCase()}${contraparteLabel.slice(1)} pagadas` : `${contraparteLabel[0].toUpperCase()}${contraparteLabel.slice(1)} con saldo`;
 
     const groups = {};
     pendientes.forEach(d=>{
@@ -2046,13 +2077,15 @@ async function resolveLoginEmail(input){
     contrapartesEl.textContent = groupNames.length;
 
     if(groupNames.length===0){
-      listEl.innerHTML = `<p class="empty-state" style="padding:30px 0;">Sin deudas ${deudaSubtab==='cobrar'?'por cobrar':'por pagar'} pendientes.</p>`;
+      listEl.innerHTML = deudaShowPagadas
+        ? `<p class="empty-state" style="padding:30px 0;">Sin deudas ${deudaSubtab==='cobrar'?'por cobrar':'por pagar'} pagadas.</p>`
+        : `<p class="empty-state" style="padding:30px 0;">Sin deudas ${deudaSubtab==='cobrar'?'por cobrar':'por pagar'} pendientes.</p>`;
       return;
     }
 
     listEl.innerHTML = groupNames.map(name=>{
       const items = groups[name].sort((a,b)=>b.date.localeCompare(a.date));
-      const subtotal = items.reduce((s,d)=>s+deudaSaldo(d),0);
+      const subtotal = deudaShowPagadas ? items.reduce((s,d)=>s+Number(d.monto),0) : items.reduce((s,d)=>s+deudaSaldo(d),0);
       const lastDate = items[0].date;
       return `
         <div class="deuda-group ${deudaSubtab}">
@@ -2079,15 +2112,27 @@ async function resolveLoginEmail(input){
                       <span class="deuda-date-display">${formatDate(d.date)}</span>
                       <button class="btn btn-ghost" style="padding:1px 5px;font-size:9px;" data-edit-deuda-date="${escapeHtml(d.id)}">✎</button>
                     </span>
-                    · ${escapeHtml(d.cat)}${abonado>0 ? ` · Abonado: ${fmt(abonado)} de ${fmt(d.monto)}` : ''}
+                    · ${escapeHtml(d.cat)}${abonado>0 ? ` · <span data-toggle-abonos="${escapeHtml(d.id)}" style="cursor:pointer;text-decoration:underline dotted;">Abonado: ${fmt(abonado)} de ${fmt(d.monto)}</span>` : ''}
                   </span>
                 </span>
                 <span style="display:flex;align-items:center;gap:8px;" class="deuda-item-actions">
-                  <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;">${fmt(saldo)}</span>
+                  <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;">${fmt(deudaShowPagadas ? Number(d.monto) : saldo)}</span>
+                  ${deudaShowPagadas ? '' : `
                   <button class="btn btn-ghost" style="padding:5px 10px;font-size:10.5px;" data-abonar-deuda="${escapeHtml(d.id)}">Abonar</button>
                   <button class="btn btn-primary" style="padding:5px 10px;font-size:10.5px;" data-pagar-deuda="${escapeHtml(d.id)}">Marcar pagada</button>
+                  `}
                 </span>
               </div>
+              ${abonado>0 ? `
+              <div class="deuda-abonos-list" id="deudaAbonos-${escapeHtml(d.id)}" style="display:${deudaShowPagadas?'flex':'none'};flex-direction:column;gap:4px;margin:-4px 0 6px 2px;">
+                ${(d.abonos||[]).slice().sort((a,b)=>b.date.localeCompare(a.date)).map(a=>`
+                  <div style="display:flex;justify-content:space-between;align-items:center;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-soft);padding:4px 8px;background:var(--green-light);border-radius:4px;">
+                    <span>${formatDate(a.date)} · ${fmt(Number(a.monto))}</span>
+                    <button class="btn btn-ghost" style="padding:1px 6px;font-size:9px;" data-remove-abono-deuda="${escapeHtml(d.id)}" data-remove-abono-id="${escapeHtml(a.id)}">Quitar</button>
+                  </div>
+                `).join('')}
+              </div>
+              ` : ''}
             `;}).join('')}
           </div>
         </div>
@@ -2116,6 +2161,19 @@ async function resolveLoginEmail(input){
       b.addEventListener('click', (e)=>{
         e.stopPropagation();
         editDeudaDate(b.dataset.editDeudaDate, b);
+      });
+    });
+    listEl.querySelectorAll('[data-toggle-abonos]').forEach(b=>{
+      b.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        const list = document.getElementById('deudaAbonos-'+b.dataset.toggleAbonos);
+        if(list) list.style.display = list.style.display==='none' ? 'flex' : 'none';
+      });
+    });
+    listEl.querySelectorAll('[data-remove-abono-deuda]').forEach(b=>{
+      b.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        removeAbono(b.dataset.removeAbonoDeuda, b.dataset.removeAbonoId);
       });
     });
   }
