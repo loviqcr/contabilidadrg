@@ -3247,7 +3247,7 @@ async function resolveLoginEmail(input){
     if(!t) return;
     const row = btn.closest('tr');
     const linked = !!(t.mermaId || t.regaliaId || t.deudaId || t.saleId);
-    const lockedTitle = linked ? 'title="Vinculado — se gestiona desde su pestaña de origen." disabled' : '';
+    const qtyLockedTitle = linked ? 'title="Vinculado — la cantidad se gestiona desde su pestaña de origen." disabled' : '';
     const catOptions = (data.categories[t.type]||[]).map(c=>
       `<option value="${escapeHtml(c)}" ${c===t.cat?'selected':''}>${escapeHtml(c)}</option>`
     ).join('');
@@ -3255,8 +3255,8 @@ async function resolveLoginEmail(input){
       <td class="tx-date-cell" style="white-space:nowrap;">${formatDate(t.date)}</td>
       <td><input type="text" class="tx-edit-desc" value="${escapeHtml(t.desc)}" style="width:100%;font-family:'Inter',sans-serif;font-size:12.5px;padding:5px 7px;border:1px solid var(--paper-line);border-radius:5px;"></td>
       <td><select class="tx-edit-cat" style="font-family:'IBM Plex Mono',monospace;font-size:11px;padding:5px 6px;border:1px solid var(--paper-line);border-radius:5px;">${catOptions}</select></td>
-      <td><input type="number" class="tx-edit-qty" value="${t.qty||1}" min="1" step="1" ${lockedTitle} style="width:55px;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:5px 6px;border:1px solid var(--paper-line);border-radius:5px;"></td>
-      <td><input type="number" class="tx-edit-amount" value="${t.amount}" step="0.01" min="0" ${lockedTitle} style="width:90px;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:5px 6px;border:1px solid var(--paper-line);border-radius:5px;"></td>
+      <td><input type="number" class="tx-edit-qty" value="${t.qty||1}" min="1" step="1" ${qtyLockedTitle} style="width:55px;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:5px 6px;border:1px solid var(--paper-line);border-radius:5px;"></td>
+      <td><input type="number" class="tx-edit-amount" value="${t.amount}" step="0.01" min="0" style="width:90px;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:5px 6px;border:1px solid var(--paper-line);border-radius:5px;"></td>
       <td style="white-space:nowrap;">
         <button class="btn btn-primary" style="padding:5px 9px;font-size:10.5px;" data-confirm-edit="${escapeHtml(id)}">Guardar</button>
         <button class="btn btn-ghost" style="padding:5px 9px;font-size:10.5px;" data-cancel-edit="1">Cancelar</button>
@@ -3266,20 +3266,58 @@ async function resolveLoginEmail(input){
     row.querySelector('[data-confirm-edit]').addEventListener('click', ()=>{
       const desc = row.querySelector('.tx-edit-desc').value.trim();
       const cat = row.querySelector('.tx-edit-cat').value;
+      const amount = parseFloat(row.querySelector('.tx-edit-amount').value);
       if(!desc){ alert('La descripción no puede quedar vacía.'); return; }
+      if(!amount || amount<=0){ alert('Escribe un monto válido.'); return; }
       t.desc = desc;
       t.cat = cat;
       if(!linked){
         const qty = parseFloat(row.querySelector('.tx-edit-qty').value) || 1;
-        const amount = parseFloat(row.querySelector('.tx-edit-amount').value);
-        if(!amount || amount<=0){ alert('Escribe un monto válido.'); return; }
         t.qty = qty;
         t.unitPrice = amount/qty;
         t.amount = amount;
+      } else {
+        t.unitPrice = t.qty ? amount/t.qty : amount;
+        t.amount = amount;
+        syncLinkedAmount(t, amount);
       }
       saveData();
       render();
     });
+  }
+
+  // Al editar el monto de un movimiento vinculado, actualiza también el
+  // registro de origen que guarda su propio total — si no, ese total queda
+  // desincronizado del movimiento (regalías guarda "monto" aparte, y una
+  // deuda calcula su saldo sumando el "monto" de cada abono, no el monto
+  // de sus movimientos). Mermas y ventas de inventario no guardan un total
+  // aparte, así que no necesitan sincronizarse.
+  function syncLinkedAmount(t, newAmount){
+    if(t.regaliaId){
+      const r = data.regalias.find(r=>r.id===t.regaliaId);
+      if(r) r.monto = newAmount;
+      return;
+    }
+    if(t.deudaId && t.cat!==COGS_CAT){
+      const d = data.deudas.find(d=>d.id===t.deudaId);
+      if(!d) return;
+      let abono = t.abonoId ? (d.abonos||[]).find(a=>a.id===t.abonoId) : null;
+      if(!abono){
+        const legacyAbonos = (d.abonos||[])
+          .filter(a=>!data.transactions.some(tx=>tx.abonoId===a.id))
+          .sort((a,b)=>idTimestamp(a.id)-idTimestamp(b.id));
+        const legacyTx = data.transactions
+          .filter(tx=>tx.deudaId===d.id && !tx.abonoId && tx.cat!==COGS_CAT)
+          .sort((a,b)=>idTimestamp(a.id)-idTimestamp(b.id));
+        const idx = legacyTx.findIndex(tx=>tx.id===t.id);
+        if(idx>=0) abono = legacyAbonos[idx];
+      }
+      if(abono){
+        abono.monto = newAmount;
+        d.pagado = deudaSaldo(d) <= 0.01;
+        d.fechaPago = d.pagado ? t.date : null;
+      }
+    }
   }
 
   function editTxDate(id, btn){
