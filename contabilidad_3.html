@@ -3217,9 +3217,12 @@ async function resolveLoginEmail(input){
         <td class="cat"><span class="chip ${t.type==='gasto'?'expense':''}">${escapeHtml(t.cat)}</span></td>
         <td class="amount">${t.qty || 1}</td>
         <td class="amount ${t.type==='gasto'?'expense':'income'}">${t.type==='gasto'?'-':'+'}${fmt(t.amount)}</td>
-        <td>${txLockReason(t)
-          ? `<button class="btn btn-danger" disabled title="${escapeHtml(txLockReason(t))}" style="opacity:.45;cursor:not-allowed;">Eliminar</button>`
-          : `<button class="btn btn-danger" data-del="${t.id}">Eliminar</button>`}</td>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-ghost" style="padding:5px 9px;font-size:10.5px;" data-edit-tx="${t.id}">Editar</button>
+          ${txLockReason(t)
+            ? `<button class="btn btn-danger" disabled title="${escapeHtml(txLockReason(t))}" style="opacity:.45;cursor:not-allowed;">Eliminar</button>`
+            : `<button class="btn btn-danger" data-del="${t.id}">Eliminar</button>`}
+        </td>
       </tr>
     `).join('');
     body.querySelectorAll('[data-del]').forEach(b=>{
@@ -3227,6 +3230,55 @@ async function resolveLoginEmail(input){
     });
     body.querySelectorAll('[data-edit-date]').forEach(b=>{
       b.addEventListener('click', ()=>editTxDate(b.dataset.editDate, b));
+    });
+    body.querySelectorAll('[data-edit-tx]').forEach(b=>{
+      b.addEventListener('click', ()=>editTxRow(b.dataset.editTx, b));
+    });
+  }
+
+  // Edita un movimiento en línea. La descripción y categoría siempre se
+  // pueden cambiar; cantidad y monto quedan bloqueados si el movimiento
+  // está vinculado a merma/regalía/deuda/venta (txLockReason), porque
+  // cambiarlos desincronizaría el stock o el saldo de la deuda con su
+  // pestaña de origen — igual que con eliminar.
+  function editTxRow(id, btn){
+    if(!isAdmin()){ alert('Solo el administrador puede editar movimientos.'); return; }
+    const t = data.transactions.find(t=>t.id===id);
+    if(!t) return;
+    const row = btn.closest('tr');
+    const linked = !!(t.mermaId || t.regaliaId || t.deudaId || t.saleId);
+    const lockedTitle = linked ? 'title="Vinculado — se gestiona desde su pestaña de origen." disabled' : '';
+    const catOptions = (data.categories[t.type]||[]).map(c=>
+      `<option value="${escapeHtml(c)}" ${c===t.cat?'selected':''}>${escapeHtml(c)}</option>`
+    ).join('');
+    row.innerHTML = `
+      <td class="tx-date-cell" style="white-space:nowrap;">${formatDate(t.date)}</td>
+      <td><input type="text" class="tx-edit-desc" value="${escapeHtml(t.desc)}" style="width:100%;font-family:'Inter',sans-serif;font-size:12.5px;padding:5px 7px;border:1px solid var(--paper-line);border-radius:5px;"></td>
+      <td><select class="tx-edit-cat" style="font-family:'IBM Plex Mono',monospace;font-size:11px;padding:5px 6px;border:1px solid var(--paper-line);border-radius:5px;">${catOptions}</select></td>
+      <td><input type="number" class="tx-edit-qty" value="${t.qty||1}" min="1" step="1" ${lockedTitle} style="width:55px;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:5px 6px;border:1px solid var(--paper-line);border-radius:5px;"></td>
+      <td><input type="number" class="tx-edit-amount" value="${t.amount}" step="0.01" min="0" ${lockedTitle} style="width:90px;font-family:'IBM Plex Mono',monospace;font-size:11px;padding:5px 6px;border:1px solid var(--paper-line);border-radius:5px;"></td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-primary" style="padding:5px 9px;font-size:10.5px;" data-confirm-edit="${escapeHtml(id)}">Guardar</button>
+        <button class="btn btn-ghost" style="padding:5px 9px;font-size:10.5px;" data-cancel-edit="1">Cancelar</button>
+      </td>
+    `;
+    row.querySelector('[data-cancel-edit]').addEventListener('click', renderTxTable);
+    row.querySelector('[data-confirm-edit]').addEventListener('click', ()=>{
+      const desc = row.querySelector('.tx-edit-desc').value.trim();
+      const cat = row.querySelector('.tx-edit-cat').value;
+      if(!desc){ alert('La descripción no puede quedar vacía.'); return; }
+      t.desc = desc;
+      t.cat = cat;
+      if(!linked){
+        const qty = parseFloat(row.querySelector('.tx-edit-qty').value) || 1;
+        const amount = parseFloat(row.querySelector('.tx-edit-amount').value);
+        if(!amount || amount<=0){ alert('Escribe un monto válido.'); return; }
+        t.qty = qty;
+        t.unitPrice = amount/qty;
+        t.amount = amount;
+      }
+      saveData();
+      render();
     });
   }
 
