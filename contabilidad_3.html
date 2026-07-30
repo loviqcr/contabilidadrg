@@ -576,17 +576,20 @@
 
     <!-- RESUMEN -->
     <div class="view active" id="view-resumen">
+      <div class="filter-bar" style="margin-bottom:16px;">
+        <select id="resumenMonth"></select>
+      </div>
       <div class="cards">
         <div class="card income">
-          <div class="label">Ingresos totales</div>
+          <div class="label" id="totalIncomeLabel">Ingresos totales</div>
           <div class="value" id="totalIncome">₡0.00</div>
         </div>
         <div class="card expense">
-          <div class="label">Gastos totales</div>
+          <div class="label" id="totalExpenseLabel">Gastos totales</div>
           <div class="value" id="totalExpense">₡0.00</div>
         </div>
         <div class="card balance">
-          <div class="label">Balance neto</div>
+          <div class="label" id="totalBalanceLabel">Balance neto</div>
           <div class="value" id="totalBalance">₡0.00</div>
         </div>
       </div>
@@ -2907,6 +2910,7 @@ async function resolveLoginEmail(input){
     renderProducts();
     populateCatSelect();
     populateMonthFilter();
+    populateResumenMonthFilter();
     renderTxTable();
     renderRecent();
     renderChart('expenseChart','gasto');
@@ -3354,7 +3358,9 @@ async function resolveLoginEmail(input){
 
   // ---------- RECENT (resumen tab) ----------
   function renderRecent(){
-    const rows = [...data.transactions].sort((a,b)=>b.date.localeCompare(a.date) || idTimestamp(b.id)-idTimestamp(a.id)).slice(0,6);
+    const month = getResumenMonth();
+    const source = month==='todos' ? data.transactions : data.transactions.filter(t=>t.date.slice(0,7)===month);
+    const rows = [...source].sort((a,b)=>b.date.localeCompare(a.date) || idTimestamp(b.id)-idTimestamp(a.id)).slice(0,6);
     const body = document.getElementById('recentBody');
     if(rows.length===0){
       body.innerHTML = `<tr><td colspan="4"><div class="empty-state">Sin movimientos todavía</div></td></tr>`;
@@ -3372,8 +3378,9 @@ async function resolveLoginEmail(input){
 
   // ---------- CHARTS ----------
   function renderChart(containerId, type){
+    const month = getResumenMonth();
     const totals = {};
-    data.transactions.filter(t=>t.type===type).forEach(t=>{
+    data.transactions.filter(t=>t.type===type && (month==='todos' || t.date.slice(0,7)===month)).forEach(t=>{
       totals[t.cat] = (totals[t.cat]||0) + Number(t.amount);
     });
     const entries = Object.entries(totals).sort((a,b)=>b[1]-a[1]);
@@ -3392,24 +3399,63 @@ async function resolveLoginEmail(input){
     `).join('');
   }
 
+  // ---------- MONTH FILTER (Resumen) ----------
+  function getResumenMonth(){
+    const sel = document.getElementById('resumenMonth');
+    return sel ? sel.value : 'todos';
+  }
+  function populateResumenMonthFilter(){
+    const sel = document.getElementById('resumenMonth');
+    if(!sel) return;
+    const months = new Set(data.transactions.map(t=>t.date.slice(0,7)));
+    const sorted = Array.from(months).sort().reverse();
+    const current = sel.value;
+    sel.innerHTML = '<option value="todos">Todos los meses</option>' +
+      sorted.map(m=>`<option value="${m}">${monthLabel(m)}</option>`).join('');
+    if(sorted.includes(current)) sel.value = current;
+  }
+  document.getElementById('resumenMonth').addEventListener('change', ()=>{
+    renderSummary();
+    renderChart('expenseChart','gasto');
+    renderChart('incomeChart','ingreso');
+    renderRecent();
+  });
+
   // ---------- SUMMARY / STAMP ----------
   function renderSummary(){
-    const income = data.transactions.filter(t=>t.type==='ingreso').reduce((s,t)=>s+Number(t.amount),0);
-    const expense = data.transactions.filter(t=>t.type==='gasto').reduce((s,t)=>s+Number(t.amount),0);
+    const month = getResumenMonth();
+    const monthTx = month==='todos' ? data.transactions : data.transactions.filter(t=>t.date.slice(0,7)===month);
+    const income = monthTx.filter(t=>t.type==='ingreso').reduce((s,t)=>s+Number(t.amount),0);
+    const expense = monthTx.filter(t=>t.type==='gasto').reduce((s,t)=>s+Number(t.amount),0);
+
+    document.getElementById('totalIncomeLabel').textContent = month==='todos' ? 'Ingresos totales' : `Ingresos de ${monthLabel(month)}`;
+    document.getElementById('totalExpenseLabel').textContent = month==='todos' ? 'Gastos totales' : `Gastos de ${monthLabel(month)}`;
+    document.getElementById('totalIncome').textContent = fmt(income);
+    document.getElementById('totalExpense').textContent = fmt(expense);
+
+    // El sello "Saldo ... al día de hoy" del header es global (se ve en
+    // todas las pestañas, no solo Resumen), así que siempre refleja la caja
+    // real acumulada desde el saldo inicial — nunca la utilidad de un mes
+    // filtrado, aunque la card "Balance neto"/"Utilidad de mes" sí cambie.
     const cutoff = data.saldoInicialFecha || '';
     const NON_CASH_CATS = [COGS_CAT, MERMA_CAT, REGALIA_CAT];
     const incomeSince = data.transactions.filter(t=>t.type==='ingreso' && t.date>=cutoff).reduce((s,t)=>s+Number(t.amount),0);
     const expenseSince = data.transactions.filter(t=>t.type==='gasto' && t.date>=cutoff && !NON_CASH_CATS.includes(t.cat)).reduce((s,t)=>s+Number(t.amount),0);
     const saldoInicial = Number(data.saldoInicial) || 0;
     const balance = saldoInicial + incomeSince - expenseSince;
-
-    document.getElementById('totalIncome').textContent = fmt(income);
-    document.getElementById('totalExpense').textContent = fmt(expense);
-    document.getElementById('totalBalance').textContent = fmt(balance);
-
     const stamp = document.getElementById('stampBox');
     stamp.classList.toggle('positive', balance>=0);
     document.getElementById('stampAmount').textContent = fmt(balance);
+
+    const balanceLabelEl = document.getElementById('totalBalanceLabel');
+    if(month==='todos'){
+      balanceLabelEl.textContent = 'Balance neto';
+      document.getElementById('totalBalance').textContent = fmt(balance);
+    } else {
+      const utilidad = income - expense;
+      balanceLabelEl.textContent = `Utilidad de ${monthLabel(month)}`;
+      document.getElementById('totalBalance').textContent = fmt(utilidad);
+    }
   }
 
   // ---------- CSV EXPORT ----------
@@ -3434,6 +3480,7 @@ async function resolveLoginEmail(input){
     populateCatSelect();
     populateProdCatSelect();
     populateMonthFilter();
+    populateResumenMonthFilter();
     renderTxTable();
     renderRecent();
     renderChart('expenseChart','gasto');
