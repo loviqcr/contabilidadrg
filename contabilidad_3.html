@@ -1703,7 +1703,8 @@ async function resolveLoginEmail(input){
     if(!isAdmin()){ alert('Solo el administrador puede eliminar movimientos.'); return; }
     const t = data.transactions.find(t=>t.id===id);
     if(!t) return;
-    if(txLockReason(t)){ alert(txLockReason(t)); return; }
+    const warning = txLinkedWarning(t);
+    if(warning && !confirm(`${warning}\n\n¿Eliminar de todas formas?`)) return;
     data.transactions = data.transactions.filter(tx=>tx.id!==id);
     render();
     showUndoToast('Movimiento eliminado.', {
@@ -1712,16 +1713,16 @@ async function resolveLoginEmail(input){
     });
   }
 
-  // Movimientos generados automáticamente (venta de inventario, merma,
-  // regalía, abono de deuda) no se pueden borrar desde Movimientos porque
-  // dejarían el stock o el saldo de la deuda desincronizados. Se gestionan
-  // desde su pestaña de origen, que sí revierte todo correctamente.
-  function txLockReason(t){
-    if(!isAdmin()) return 'Solo el administrador puede eliminar movimientos.';
-    if(t.mermaId) return 'Vinculado a una merma — quítala desde la pestaña Mermas.';
-    if(t.regaliaId) return 'Vinculado a una regalía — quítala desde la pestaña Regalías.';
-    if(t.deudaId) return 'Vinculado a un abono de deuda — no se puede eliminar por separado.';
-    if(t.saleId) return 'Vinculado a una venta de inventario — no se puede eliminar por separado.';
+  // Aviso informativo (ya no bloquea el borrado): si el movimiento viene de
+  // una merma, regalía, abono de deuda o venta de inventario, borrarlo aquí
+  // no ajusta el stock ni el saldo relacionado — eso queda a mano si hace
+  // falta. Para que se ajuste solo, hay que quitarlo desde su pestaña de
+  // origen (Mermas, Regalías o Deudas).
+  function txLinkedWarning(t){
+    if(t.mermaId) return 'Vinculado a una merma — el stock no se repone automáticamente.';
+    if(t.regaliaId) return 'Vinculado a una regalía — el stock no se repone automáticamente.';
+    if(t.deudaId) return 'Vinculado a un abono de deuda — el saldo de la deuda no se ajusta automáticamente.';
+    if(t.saleId) return 'Vinculado a una venta de inventario — el stock no se repone automáticamente.';
     return null;
   }
 
@@ -3223,9 +3224,9 @@ async function resolveLoginEmail(input){
         <td class="amount ${t.type==='gasto'?'expense':'income'}">${t.type==='gasto'?'-':'+'}${fmt(t.amount)}</td>
         <td style="white-space:nowrap;">
           <button class="btn btn-ghost" style="padding:5px 9px;font-size:10.5px;" data-edit-tx="${t.id}">Editar</button>
-          ${txLockReason(t)
-            ? `<button class="btn btn-danger" disabled title="${escapeHtml(txLockReason(t))}" style="opacity:.45;cursor:not-allowed;">Eliminar</button>`
-            : `<button class="btn btn-danger" data-del="${t.id}">Eliminar</button>`}
+          ${isAdmin()
+            ? `<button class="btn btn-danger" data-del="${t.id}" ${txLinkedWarning(t) ? `title="${escapeHtml(txLinkedWarning(t))}"` : ''}>Eliminar</button>`
+            : `<button class="btn btn-danger" disabled title="Solo el administrador puede eliminar movimientos." style="opacity:.45;cursor:not-allowed;">Eliminar</button>`}
         </td>
       </tr>
     `).join('');
@@ -3240,11 +3241,11 @@ async function resolveLoginEmail(input){
     });
   }
 
-  // Edita un movimiento en línea. La descripción y categoría siempre se
-  // pueden cambiar; cantidad y monto quedan bloqueados si el movimiento
-  // está vinculado a merma/regalía/deuda/venta (txLockReason), porque
-  // cambiarlos desincronizaría el stock o el saldo de la deuda con su
-  // pestaña de origen — igual que con eliminar.
+  // Edita un movimiento en línea. Descripción, categoría y monto siempre
+  // se pueden cambiar (el monto se sincroniza con su registro de origen
+  // vía syncLinkedAmount). La cantidad queda bloqueada si el movimiento
+  // está vinculado a merma/regalía/deuda/venta, porque cambiarla
+  // desincronizaría el stock ya descontado.
   function editTxRow(id, btn){
     if(!isAdmin()){ alert('Solo el administrador puede editar movimientos.'); return; }
     const t = data.transactions.find(t=>t.id===id);
