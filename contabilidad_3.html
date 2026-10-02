@@ -161,36 +161,54 @@
      Antes solo lo hacía bajo 760px, así que en iPad (y con la pestaña extra
      de Usuarios del admin) se salía del ancho y descuadraba toda la página. */
   html, body{max-width:100%;overflow-x:hidden;}
+  /* Barra blanca redondeada con un botón tipo píldora por pestaña (ícono +
+     texto); la activa va en azul sólido. */
   nav.tabs{
     display:flex;
-    gap:6px;
-    margin:22px 0 0;
-    flex-wrap:nowrap;
-    overflow-x:auto;
-    -webkit-overflow-scrolling:touch;
+    gap:8px;
+    margin:22px 0 14px;
+    padding:8px;
+    background:#fff;
+    border-radius:18px;
+    box-shadow:0 4px 14px rgba(10,37,68,0.18);
+    /* Las 9 pestañas no caben en una sola fila del ancho de la página, así
+       que pasan a una segunda fila en vez de quedar escondidas a la derecha.
+       En pantallas angostas (ver @media) la fila se desliza de lado. */
+    flex-wrap:wrap;
     scrollbar-width:none;
   }
   nav.tabs::-webkit-scrollbar{display:none;}
   nav.tabs button{
-    flex-shrink:0;
+    flex:1 1 auto;
     white-space:nowrap;
-    font-family:'IBM Plex Mono',monospace;
-    font-size:12.5px;
-    letter-spacing:.05em;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:9px;
+    font-family:'Inter',sans-serif;
+    font-size:12px;
+    font-weight:600;
+    letter-spacing:.04em;
     text-transform:uppercase;
-    padding:11px 18px;
-    border:none;
-    background:rgba(230,242,250,0.12);
-    color:#EAF4FB;
+    padding:10px 16px;
+    border:1px solid #DCE6F3;
+    background:#F3F7FD;
+    color:#4A5B78;
     cursor:pointer;
-    border-radius:8px 8px 0 0;
+    border-radius:13px;
     transition:.15s;
   }
-  nav.tabs button.active{
-    background:var(--paper);
-    color:var(--ink);
+  nav.tabs button svg{
+    width:18px;height:18px;flex-shrink:0;
+    fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;
   }
-  nav.tabs button:not(.active):hover{background:rgba(230,242,250,0.22);}
+  nav.tabs button.active{
+    background:#1565D8;
+    border-color:#1565D8;
+    color:#fff;
+    box-shadow:0 3px 8px rgba(21,101,216,0.35);
+  }
+  nav.tabs button:not(.active):hover{background:#E6EFFB;border-color:#C6D8F0;}
 
   /* SUBTABS (Deudas) */
   .subtabs{display:inline-flex;background:var(--accent-light);border-radius:20px;padding:3px;margin-bottom:20px;}
@@ -225,7 +243,7 @@
   /* PAGE */
   .page{
     background:var(--paper);
-    border-radius:0 12px 12px 12px;
+    border-radius:12px;
     padding:32px;
     box-shadow:var(--shadow);
   }
@@ -522,7 +540,7 @@
     .biz-name{width:100%;}
     .stamp{align-self:center;}
     nav.tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;}
-    nav.tabs button{flex-shrink:0;}
+    nav.tabs button{flex:0 0 auto;}
     .page{padding:18px;}
     table{display:block;overflow-x:auto;}
     .prod-form{flex-direction:column;align-items:stretch;}
@@ -578,15 +596,15 @@
   <div id="dataLoadBanner" style="display:none;padding:10px 16px;border-radius:8px;margin:0 0 16px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;align-items:center;justify-content:space-between;gap:12px;"></div>
 
   <nav class="tabs">
-    <button class="active" data-tab="resumen">Resumen</button>
-    <button data-tab="movimientos">Movimientos</button>
-    <button data-tab="inventario">Inventario</button>
-    <button data-tab="categorias">Categorías</button>
-    <button data-tab="comercios">Comercios</button>
-    <button data-tab="deudas">Deudas</button>
-    <button data-tab="mermas">Mermas y regalías</button>
-    <button data-tab="comprobantes">Comprobantes</button>
-    <button data-tab="admin" id="adminTabBtn" style="display:none;">Usuarios</button>
+    <button class="active" data-tab="resumen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Resumen</button>
+    <button data-tab="movimientos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>Movimientos</button>
+    <button data-tab="inventario"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg>Inventario</button>
+    <button data-tab="categorias"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.2"/></svg>Categorías</button>
+    <button data-tab="comercios"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9 4.5 4h15L21 9"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12v8h14v-8"/><path d="M10 20v-5h4v5"/></svg>Comercios</button>
+    <button data-tab="deudas"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 9h18"/><circle cx="16.5" cy="14.5" r="1.2"/></svg>Deudas</button>
+    <button data-tab="mermas"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>Mermas y regalías</button>
+    <button data-tab="comprobantes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>Comprobantes</button>
+    <button data-tab="admin" id="adminTabBtn" style="display:none;"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>Usuarios</button>
   </nav>
 
   <div class="page">
