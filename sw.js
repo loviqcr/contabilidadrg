@@ -1,4 +1,4 @@
-const CACHE_NAME = 'libro-contable-v5';
+const CACHE_NAME = 'libro-contable-v6';
 const SHELL = ['./', './index.html', './contabilidad_3.html', './manifest.json', './icon-192.png', './icon-512.png', './logo.jpg', './jspdf.umd.min.js'];
 
 self.addEventListener('install', (e) => {
@@ -13,11 +13,10 @@ self.addEventListener('activate', (e) => {
   self.clients.claim();
 });
 
-// Network-first, pero con un límite de espera: si hay copia guardada y la
-// red tarda más de 3s (típico con señal débil), se usa esa copia de una vez
-// en lugar de dejar la página colgada — la red sigue trabajando en segundo
-// plano y actualiza el caché para la próxima. Si no hay copia guardada
-// todavía (primera visita), sí espera a la red porque no hay de otra.
+// Primero la copia guardada, y la red actualiza el caché en segundo plano
+// para la próxima apertura. Antes se esperaba hasta 3s a la red por cada
+// archivo, lo que con señal débil frenaba cada arranque. Si no hay copia
+// guardada todavía (primera visita), sí espera a la red porque no hay de otra.
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
@@ -28,17 +27,13 @@ self.addEventListener('fetch', (e) => {
     const cached = await cache.match(e.request);
 
     const networkFetch = fetch(e.request).then((res) => {
-      cache.put(e.request, res.clone());
+      if (res.ok) cache.put(e.request, res.clone());
       return res;
     });
 
     if (!cached) return networkFetch;
 
-    const timeout = new Promise((resolve) => setTimeout(() => resolve(cached), 3000));
-    try {
-      return await Promise.race([networkFetch, timeout]);
-    } catch (err) {
-      return cached;
-    }
+    e.waitUntil(networkFetch.catch(() => {}));
+    return cached;
   })());
 });

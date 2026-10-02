@@ -675,6 +675,9 @@
         <thead><tr><th>Fecha</th><th>Descripción</th><th>Categoría</th><th style="text-align:right">Cant.</th><th style="text-align:right">Monto</th><th></th></tr></thead>
         <tbody id="txBody"></tbody>
       </table>
+      <div id="txMore" style="display:none;text-align:center;padding:14px 0;">
+        <button type="button" class="btn btn-ghost" id="txMoreBtn"></button>
+      </div>
     </div>
 
     <!-- INVENTARIO -->
@@ -1151,6 +1154,12 @@
       <div class="section-title"><span class="num">§3</span> Herramientas</div>
       <div class="cat-item" style="align-items:flex-start;flex-direction:column;gap:8px;">
         <span style="font-family:'Inter',sans-serif;font-size:13px;color:var(--ink-soft);">
+          Descarga una copia completa del libro (movimientos, deudas, inventario y comprobantes con sus fotos) en un archivo. Solo lee los datos, no cambia nada.
+        </span>
+        <button type="button" class="btn btn-ghost" id="downloadBackupBtn">Descargar respaldo</button>
+      </div>
+      <div class="cat-item" style="align-items:flex-start;flex-direction:column;gap:8px;">
+        <span style="font-family:'Inter',sans-serif;font-size:13px;color:var(--ink-soft);">
           Reparación de una sola vez: busca ventas a crédito antiguas cuyo movimiento de "Costo de..." quedó con una fecha distinta a la de su deuda (porque se creó antes de que quedaran vinculados), y la sincroniza.
         </span>
         <button type="button" class="btn btn-ghost" id="repairCogsDatesBtn">Sincronizar fechas de costos con sus deudas</button>
@@ -1162,7 +1171,6 @@
   <footer>Los datos se guardan automáticamente en tu cuenta · © 2026 JCS Tech Solutions — Costa Rica</footer>
 </div>
 
-<script src="jspdf.umd.min.js"></script>
 <script type="module">
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -1350,8 +1358,16 @@ async function resolveLoginEmail(input){
     }
   }
 
+  // Mientras el libro no se haya leído bien de Firestore, `data` está vacío
+  // (defaultData) — guardar en ese estado pisaría el libro real con uno en
+  // blanco, así que saveData() se niega hasta que la carga termine bien.
+  let dataLoaded = false;
+  let mediaLoaded = false;
+
   async function loadData(){
     setLoadBanner('loading', 'Cargando datos...');
+    dataLoaded = false;
+    mediaLoaded = false;
     data = defaultData();
     const attempts = 3;
     let lastError = null;
@@ -1368,6 +1384,7 @@ async function resolveLoginEmail(input){
         if(i<attempts-1) await sleep(800*(i+1));
       }
     }
+    dataLoaded = !lastError;
     if(!lastError && !data.saldoInicialFecha){
       data.saldoInicial = 87300;
       data.saldoInicialFecha = todayLocal();
@@ -1389,6 +1406,7 @@ async function resolveLoginEmail(input){
         data.comprobantes = [];
         compSnap.forEach(d=>data.comprobantes.push({ id: d.id, ...d.data() }));
         mediaError = null;
+        mediaLoaded = true;
         break;
       }catch(e){
         mediaError = e;
@@ -1401,6 +1419,10 @@ async function resolveLoginEmail(input){
   }
 
   async function saveData(){
+    if(!dataLoaded){
+      alert('No se guardó el cambio: los datos todavía no han cargado. Toca "Reintentar" o recarga la página antes de continuar.');
+      return;
+    }
     try{
       const { products, comprobantes, ...mainData } = data;
       await setDoc(userDocRef(), mainData);
@@ -1552,9 +1574,14 @@ async function resolveLoginEmail(input){
     }
   });
 
+  // Formateadores reutilizados: crear uno nuevo en cada llamada (lo que hace
+  // toLocaleString por dentro) es lento cuando se repite miles de veces.
+  const moneyFormat = new Intl.NumberFormat('es-CR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const timeFormat = new Intl.DateTimeFormat('es-CR', {hour:'2-digit', minute:'2-digit'});
+
   function fmt(n){
     const num = Number(n)||0;
-    return '₡' + num.toLocaleString('es-CR', {minimumFractionDigits:2, maximumFractionDigits:2});
+    return '₡' + moneyFormat.format(num);
   }
 
   function uid(){ return 'tx_' + Date.now() + '_' + Math.random().toString(36).slice(2,8); }
@@ -1623,12 +1650,20 @@ async function resolveLoginEmail(input){
       document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById('view-'+btn.dataset.tab).classList.add('active');
+      renderTabIfPending(btn.dataset.tab);
     });
   });
 
   // ---------- BIZ NAME ----------
   const bizInput = document.getElementById('bizName');
-  bizInput.addEventListener('input', ()=>{ data.bizName = bizInput.value; saveData(); });
+  // Se espera a que deje de escribir para guardar — antes subía el libro
+  // completo en cada tecla.
+  let bizSaveTimer = null;
+  bizInput.addEventListener('input', ()=>{
+    data.bizName = bizInput.value;
+    clearTimeout(bizSaveTimer);
+    bizSaveTimer = setTimeout(saveData, 800);
+  });
 
   // ---------- CATEGORY SELECT ----------
   function populateCatSelect(){
@@ -3043,6 +3078,23 @@ async function resolveLoginEmail(input){
   const PDF_SKYBLUE = [62, 159, 216];
   const PDF_GRAY = [120, 120, 120];
 
+  // jsPDF pesa ~360KB y solo se usa aquí, así que se carga hasta que se pide
+  // el catálogo en vez de frenar el arranque de toda la app.
+  let jsPdfPromise;
+  function loadJsPdf(){
+    if(window.jspdf) return Promise.resolve();
+    if(!jsPdfPromise){
+      jsPdfPromise = new Promise((resolve, reject)=>{
+        const s = document.createElement('script');
+        s.src = 'jspdf.umd.min.js';
+        s.onload = resolve;
+        s.onerror = ()=>{ jsPdfPromise = null; s.remove(); reject(new Error('jsPDF no cargó')); };
+        document.head.appendChild(s);
+      });
+    }
+    return jsPdfPromise;
+  }
+
   let logoDataUrlCache;
   function getLogoDataUrl(){
     if(logoDataUrlCache !== undefined) return logoDataUrlCache;
@@ -3097,6 +3149,8 @@ async function resolveLoginEmail(input){
       getLogoDataUrl()
     ]);
 
+    try{ await loadJsPdf(); }
+    catch(e){ alert('No se pudo cargar el generador de PDF. Revisa tu conexión e intenta de nuevo.'); return; }
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit:'mm', format:'letter' });
     doc.setFont('helvetica','normal');
@@ -3184,9 +3238,15 @@ async function resolveLoginEmail(input){
     return `${names[parseInt(mo,10)-1]} ${y}`;
   }
 
-  document.getElementById('filterType').addEventListener('change', renderTxTable);
-  document.getElementById('filterMonth').addEventListener('change', renderTxTable);
-  document.getElementById('filterSearch').addEventListener('input', renderTxTable);
+  // La tabla muestra de a TX_PAGE filas (los totales sí cuentan todo lo
+  // filtrado); al cambiar un filtro se vuelve a la primera tanda.
+  const TX_PAGE = 100;
+  let txLimit = TX_PAGE;
+  function resetTxPageAndRender(){ txLimit = TX_PAGE; renderTxTable(); }
+  document.getElementById('filterType').addEventListener('change', resetTxPageAndRender);
+  document.getElementById('filterMonth').addEventListener('change', resetTxPageAndRender);
+  document.getElementById('filterSearch').addEventListener('input', resetTxPageAndRender);
+  document.getElementById('txMoreBtn').addEventListener('click', ()=>{ txLimit += TX_PAGE; renderTxTable(); });
 
   function getFilteredTx(){
     const type = document.getElementById('filterType').value;
@@ -3207,11 +3267,15 @@ async function resolveLoginEmail(input){
     document.getElementById('txTotalIncome').textContent = fmt(income);
     document.getElementById('txTotalExpense').textContent = fmt(expense);
     const body = document.getElementById('txBody');
+    const moreBox = document.getElementById('txMore');
+    const remaining = rows.length - txLimit;
+    moreBox.style.display = remaining>0 ? 'block' : 'none';
+    if(remaining>0) document.getElementById('txMoreBtn').textContent = `Ver ${Math.min(remaining, TX_PAGE)} más (faltan ${remaining})`;
     if(rows.length===0){
       body.innerHTML = `<tr><td colspan="6"><div class="empty-state">Aún no hay movimientos registrados. Agrega el primero arriba.</div></td></tr>`;
       return;
     }
-    body.innerHTML = rows.map(t=>`
+    body.innerHTML = rows.slice(0, txLimit).map(t=>`
       <tr>
         <td class="tx-date-cell" style="white-space:nowrap;">
           <span class="tx-date-display">${formatDate(t.date)}</span>
@@ -3354,7 +3418,7 @@ async function resolveLoginEmail(input){
   function formatTime(id){
     const ts = idTimestamp(id);
     if(!ts) return '';
-    return new Date(ts).toLocaleTimeString('es-CR', {hour:'2-digit', minute:'2-digit'});
+    return timeFormat.format(new Date(ts));
   }
 
   // ---------- RECENT (resumen tab) ----------
@@ -3476,30 +3540,66 @@ async function resolveLoginEmail(input){
   });
 
   // ---------- MASTER RENDER ----------
+  // Solo se dibuja la pestaña que está a la vista; las demás quedan marcadas
+  // como pendientes y se dibujan al entrar a ellas. Antes cada cambio
+  // redibujaba las 9 pestañas (incluidas todas las fotos del inventario).
+  const pendingTabs = new Set();
+
+  function renderTab(tab){
+    pendingTabs.delete(tab);
+    switch(tab){
+      case 'resumen':
+        renderRecent();
+        renderChart('expenseChart','gasto');
+        renderChart('incomeChart','ingreso');
+        break;
+      case 'movimientos': renderTxTable(); break;
+      case 'inventario': renderProducts(); break;
+      case 'categorias': renderCategories(); break;
+      case 'comercios': renderComercios(); break;
+      case 'deudas': renderDeudas(); break;
+      case 'mermas': renderMermas(); renderRegalias(); break;
+      case 'comprobantes': renderComprobantes(); renderEfectivo(); break;
+    }
+  }
+
+  function renderTabIfPending(tab){
+    if(pendingTabs.has(tab)) renderTab(tab);
+  }
+
   function render(){
     bizInput.value = data.bizName || '';
     populateCatSelect();
     populateProdCatSelect();
     populateMonthFilter();
     populateResumenMonthFilter();
-    renderTxTable();
-    renderRecent();
-    renderChart('expenseChart','gasto');
-    renderChart('incomeChart','ingreso');
-    renderSummary();
-    renderCategories();
-    renderProducts();
-    renderComercios();
     populateComercioSelectForDeuda();
     populateDeudaCobrarCatSelect();
-    renderDeudas();
     populateMermaProductSelect();
-    renderMermas();
     populateRegaliaProductSelect();
-    renderRegalias();
-    renderComprobantes();
-    renderEfectivo();
+    // El sello de saldo del header se ve en todas las pestañas.
+    renderSummary();
+    TAB_NAMES.forEach(t=>pendingTabs.add(t));
+    const activeBtn = document.querySelector('nav.tabs button.active');
+    if(activeBtn) renderTab(activeBtn.dataset.tab);
   }
+  const TAB_NAMES = ['resumen','movimientos','inventario','categorias','comercios','deudas','mermas','comprobantes'];
+
+  // ---------- RESPALDO ----------
+  document.getElementById('downloadBackupBtn').addEventListener('click', ()=>{
+    if(!dataLoaded || !mediaLoaded){
+      alert('Los datos todavía no han terminado de cargar. Espera un momento o recarga la página e intenta de nuevo.');
+      return;
+    }
+    const { products, comprobantes, ...main } = data;
+    const backup = { exportedAt: new Date().toISOString(), main, products, comprobantes };
+    const blob = new Blob([JSON.stringify(backup)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `respaldo-libro-${todayLocal()}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
 
   document.getElementById('txDate').value = todayLocal();
   document.getElementById('deudaFecha').value = todayLocal();
