@@ -1177,7 +1177,7 @@ import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, signOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, writeBatch, runTransaction, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDs4nbxNMMrDOy5Mvr0zPaR-iWAF3LFFtQ",
@@ -1375,7 +1375,22 @@ async function resolveLoginEmail(input){
       try{
         let snap = await getDoc(userDocRef());
         if(await migrateToSharedIfNeeded(snap)) snap = await getDoc(userDocRef());
-        if(snap.exists()) data = { ...defaultData(), ...snap.data() };
+        let main = {};
+        let chunkDocs = [];
+        if(snap.exists()){
+          main = snap.data();
+          const chunkSnap = await getDocs(chunksColRef());
+          chunkDocs = chunkSnap.docs.map(d=>({ id: d.id, ...d.data() }));
+          if(main.schemaVersion !== SCHEMA_VERSION){
+            chunkDocs = await migrateToChunks(main, chunkDocs);
+            main = stripChunkedFields(main);
+            main.schemaVersion = SCHEMA_VERSION;
+          }
+        }
+        data = { ...defaultData(), ...stripChunkedFields(main), ...assembleChunks(chunkDocs) };
+        delete data.schemaVersion;
+        syncState = buildSyncState(data);
+        syncedMain = mainFieldsJson(main);
         lastError = null;
         break;
       }catch(e){
@@ -1418,17 +1433,206 @@ async function resolveLoginEmail(input){
     render();
   }
 
-  async function saveData(){
+  // ---------- GUARDADO POR PARTES ----------
+  // Movimientos, deudas, mermas, regalías y pagos en efectivo ya no viven
+  // como arrays dentro de business/shared (ese documento se acercaba al
+  // límite de 1MB de Firestore), sino repartidos por mes en
+  // business/shared/chunks/{tipo}_{YYYY-MM}. En memoria `data` conserva la
+  // misma forma de siempre; solo cambian loadData() y saveData().
+  //
+  // Al guardar se compara `data` contra lo último sincronizado y se sube
+  // solo lo que cambió, registro por registro, dentro de una transacción
+  // que primero lee el mes afectado. Así dos personas trabajando a la vez
+  // ya no se pisan: cada una agrega/edita/borra sus registros sin
+  // reemplazar el libro entero con su copia.
+  function chunksColRef(){
+    return collection(db, 'business', 'shared', 'chunks');
+  }
+
+  // <chunk-logic> (funciones puras, sin Firestore)
+  const SCHEMA_VERSION = 2;
+  const CHUNKED_TYPES = ['transactions','deudas','mermas','regalias','pagosEfectivo'];
+
+  function chunkKey(type, item){
+    const m = /^\d{4}-\d{2}/.exec(item.date || '');
+    return type + '_' + (m ? m[0] : 'sin-fecha');
+  }
+
+  function stripChunkedFields(main){
+    const out = { ...main };
+    CHUNKED_TYPES.forEach(t=>{ delete out[t]; });
+    return out;
+  }
+
+  // Junta los documentos de chunks en los arrays de siempre. Se ordenan por
+  // id de documento (tipo + mes) para que el orden sea estable entre cargas.
+  function assembleChunks(chunkDocs){
+    const out = {};
+    CHUNKED_TYPES.forEach(t=>{ out[t] = []; });
+    [...chunkDocs].sort((a,b)=>a.id.localeCompare(b.id)).forEach(c=>{
+      if(out[c.type]) out[c.type].push(...(c.items || []));
+    });
+    return out;
+  }
+
+  // Foto de lo sincronizado: por tipo, id → { key (chunk), json }.
+  function buildSyncState(d){
+    const state = {};
+    CHUNKED_TYPES.forEach(type=>{
+      const map = new Map();
+      (d[type] || []).forEach(item=>map.set(item.id, { key: chunkKey(type, item), json: JSON.stringify(item) }));
+      state[type] = map;
+    });
+    return state;
+  }
+
+  // Qué cambió desde la última sincronización, agrupado por chunk:
+  // { [key]: { type, upserts:[item], deletes:[id] } }
+  function diffChunks(d, state){
+    const ops = {};
+    const opFor = (key, type)=> ops[key] || (ops[key] = { type, upserts: [], deletes: [] });
+    CHUNKED_TYPES.forEach(type=>{
+      const prev = state[type];
+      const seen = new Set();
+      (d[type] || []).forEach(item=>{
+        seen.add(item.id);
+        const key = chunkKey(type, item);
+        const json = JSON.stringify(item);
+        const old = prev.get(item.id);
+        if(old && old.key===key && old.json===json) return;
+        // Si cambió de mes (se editó la fecha), sale de su chunk anterior.
+        if(old && old.key!==key) opFor(old.key, type).deletes.push(item.id);
+        opFor(key, type).upserts.push(JSON.parse(json));
+      });
+      prev.forEach((old, id)=>{ if(!seen.has(id)) opFor(old.key, type).deletes.push(id); });
+    });
+    return ops;
+  }
+
+  // Aplica los cambios propios sobre lo que hay en el servidor en ese
+  // momento, sin tocar los registros que no cambiamos nosotros.
+  function applyChunkOps(items, op){
+    const del = new Set(op.deletes);
+    const up = new Map(op.upserts.map(i=>[i.id, i]));
+    const out = [];
+    items.forEach(i=>{
+      if(up.has(i.id)){ out.push(up.get(i.id)); up.delete(i.id); }
+      else if(!del.has(i.id)) out.push(i);
+    });
+    up.forEach(i=>out.push(i));
+    return out;
+  }
+
+  // Pasa los arrays del formato anterior (dentro del documento principal) a
+  // chunks. Solo agrega: un registro cuyo id ya está en algún chunk no se
+  // toca, así que repetir la migración nunca pisa datos más nuevos.
+  // Devuelve { chunkDocs (todos, ya actualizados), changedKeys }.
+  function planMigration(main, chunkDocs){
+    const byKey = new Map(chunkDocs.map(c=>[c.id, { id: c.id, type: c.type, items: [...(c.items || [])] }]));
+    const changedKeys = new Set();
+    CHUNKED_TYPES.forEach(type=>{
+      const existing = new Set();
+      byKey.forEach(c=>{ if(c.type===type) c.items.forEach(i=>existing.add(i.id)); });
+      (main[type] || []).forEach((raw, idx)=>{
+        const item = JSON.parse(JSON.stringify(raw));
+        if(!item.id) item.id = `tx_0_${type}${idx}`;
+        if(existing.has(item.id)) return;
+        existing.add(item.id);
+        const key = chunkKey(type, item);
+        if(!byKey.has(key)) byKey.set(key, { id: key, type, items: [] });
+        byKey.get(key).items.push(item);
+        changedKeys.add(key);
+      });
+    });
+    return { chunkDocs: [...byKey.values()], changedKeys: [...changedKeys] };
+  }
+
+  // Campos del documento principal (todo menos lo que va en chunks o en
+  // sus propias colecciones), como { campo: json } para poder comparar.
+  function mainFieldsJson(d){
+    const out = {};
+    Object.keys(d).forEach(k=>{
+      if(CHUNKED_TYPES.includes(k) || k==='products' || k==='comprobantes' || k==='schemaVersion') return;
+      out[k] = JSON.stringify(d[k]);
+    });
+    return out;
+  }
+  // </chunk-logic>
+
+  // Migración de una sola vez al formato por partes. Antes de mover nada
+  // deja una copia intacta del documento principal en
+  // business/shared/backups/, y el cambio en sí va en un solo batch
+  // (todo o nada): o quedan los chunks escritos y el documento principal
+  // marcado como migrado, o no cambia nada.
+  async function migrateToChunks(main, chunkDocs){
+    const plan = planMigration(main, chunkDocs);
+    await setDoc(doc(db, 'business', 'shared', 'backups', 'v1_' + Date.now()), main);
+    const batch = writeBatch(db);
+    const byKey = new Map(plan.chunkDocs.map(c=>[c.id, c]));
+    plan.changedKeys.forEach(key=>{
+      const c = byKey.get(key);
+      batch.set(doc(chunksColRef(), key), { type: c.type, items: c.items });
+    });
+    const mainPatch = { schemaVersion: SCHEMA_VERSION };
+    CHUNKED_TYPES.forEach(t=>{ mainPatch[t] = deleteField(); });
+    batch.update(userDocRef(), mainPatch);
+    await batch.commit();
+    return plan.chunkDocs;
+  }
+
+  let syncState = buildSyncState({});
+  let syncedMain = {};
+  let saveQueue = Promise.resolve();
+  let saveRetryTimer = null;
+  let saveFailing = false;
+
+  // Los guardados van en fila: si se disparan dos seguidos, el segundo
+  // espera al primero y compara contra lo que ese ya sincronizó.
+  function saveData(){
     if(!dataLoaded){
       alert('No se guardó el cambio: los datos todavía no han cargado. Toca "Reintentar" o recarga la página antes de continuar.');
-      return;
+      return Promise.resolve();
     }
+    saveQueue = saveQueue.then(doSave);
+    return saveQueue;
+  }
+
+  async function doSave(){
+    clearTimeout(saveRetryTimer);
     try{
-      const { products, comprobantes, ...mainData } = data;
-      await setDoc(userDocRef(), mainData);
+      CHUNKED_TYPES.forEach(type=>data[type].forEach(i=>{ if(!i.id) i.id = uid(); }));
+      const ops = diffChunks(data, syncState);
+      const nextState = buildSyncState(data);
+      const nextMain = mainFieldsJson(data);
+      const mainPatch = {};
+      Object.keys(nextMain).forEach(k=>{
+        if(nextMain[k]!==undefined && nextMain[k]!==syncedMain[k]) mainPatch[k] = JSON.parse(nextMain[k]);
+      });
+      const keys = Object.keys(ops);
+      const mainChanged = Object.keys(mainPatch).length>0;
+      if(keys.length || mainChanged){
+        await runTransaction(db, async (tx)=>{
+          const refs = keys.map(key=>doc(chunksColRef(), key));
+          const snaps = await Promise.all(refs.map(ref=>tx.get(ref)));
+          snaps.forEach((snap, i)=>{
+            const items = snap.exists() ? (snap.data().items || []) : [];
+            tx.set(refs[i], { type: ops[keys[i]].type, items: applyChunkOps(items, ops[keys[i]]) });
+          });
+          if(mainChanged) tx.set(userDocRef(), { ...mainPatch, schemaVersion: SCHEMA_VERSION }, { merge: true });
+        });
+      }
+      syncState = nextState;
+      syncedMain = nextMain;
+      saveFailing = false;
     }catch(e){
       console.error('Error guardando datos', e);
-      alert('No se pudo guardar el cambio: ' + e.message);
+      // El cambio sigue en pantalla y se reintenta solo; se avisa una vez
+      // por racha de fallos para no llenar de alertas con mala señal.
+      if(!saveFailing){
+        saveFailing = true;
+        alert('No se pudo guardar el cambio (' + e.message + '). Se seguirá intentando; no cierres ni recargues la página hasta recuperar la conexión.');
+      }
+      saveRetryTimer = setTimeout(()=>{ if(dataLoaded) saveData(); }, 10000);
     }
   }
 
