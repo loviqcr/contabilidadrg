@@ -156,12 +156,23 @@
   .stamp-sub{font-family:'IBM Plex Mono',monospace;font-size:9px;margin-top:4px;opacity:.75;}
 
   /* NAV */
+  /* La fila de pestañas se desliza de lado por sí sola en cualquier ancho.
+     Antes solo lo hacía bajo 760px, así que en iPad (y con la pestaña extra
+     de Usuarios del admin) se salía del ancho y descuadraba toda la página. */
+  html, body{max-width:100%;overflow-x:hidden;}
   nav.tabs{
     display:flex;
     gap:6px;
     margin:22px 0 0;
+    flex-wrap:nowrap;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
   }
+  nav.tabs::-webkit-scrollbar{display:none;}
   nav.tabs button{
+    flex-shrink:0;
+    white-space:nowrap;
     font-family:'IBM Plex Mono',monospace;
     font-size:12.5px;
     letter-spacing:.05em;
