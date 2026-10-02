@@ -33,6 +33,23 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
+
+  // El SDK de Firebase viene de gstatic con la versión en la URL, así que
+  // nunca cambia: se guarda una vez y de ahí en adelante sale del caché sin
+  // tocar la red (el caché normal del navegador no siempre lo conserva,
+  // sobre todo en iPhone/iPad).
+  if (url.href.startsWith('https://www.gstatic.com/firebasejs/')) {
+    e.respondWith((async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match(e.request);
+      if (cached) return cached;
+      const res = await fetch(e.request);
+      if (res.ok) cache.put(e.request, res.clone());
+      return res;
+    })());
+    return;
+  }
+
   if (url.origin !== self.location.origin) return;
 
   e.respondWith((async () => {

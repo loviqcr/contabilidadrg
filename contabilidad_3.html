@@ -1196,6 +1196,12 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, writeBatch, runTransaction, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+// Momento en que el SDK de Firebase ya terminó de bajar y la app empieza a
+// correr; se usa para el desglose de tiempos del pie de página.
+const tAppStart = performance.now();
+let tAuthReady = null;
+let manualLogin = false;
+
 const firebaseConfig = {
   apiKey: "AIzaSyDs4nbxNMMrDOy5Mvr0zPaR-iWAF3LFFtQ",
   authDomain: "contabilidad-rg.firebaseapp.com",
@@ -1457,7 +1463,7 @@ async function resolveLoginEmail(input){
     // decir dónde se va la espera cuando la app se siente lenta.
     const secs = (ms)=>(ms/1000).toFixed(1) + 's';
     document.getElementById('loadTimings').textContent =
-      `Carga: arranque ${secs(tStart)} · datos ${secs(tData-tStart)} · pantalla ${secs(tRender-tData)} · fotos ${secs(tMedia-tRender)}`;
+      `Carga: descarga ${secs(tAppStart)} · sesión ${secs(tAuthReady-tAppStart)}${manualLogin ? ' (inicio manual)' : ''} · datos ${secs(tData-tStart)} · pantalla ${secs(tRender-tData)} · fotos ${secs(tMedia-tRender)}`;
   }
 
   // ---------- GUARDADO POR PARTES ----------
@@ -1790,6 +1796,7 @@ async function resolveLoginEmail(input){
   onAuthStateChanged(auth, async (user)=>{
     authError.textContent = '';
     authPassword.value = '';
+    if(tAuthReady===null){ tAuthReady = performance.now(); manualLogin = !user; }
     if(user){
       currentUser = user;
       authOverlay.style.display = 'none';
