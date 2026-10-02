@@ -9,6 +9,12 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#12395F">
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com">
+<link rel="preconnect" href="https://identitytoolkit.googleapis.com">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js">
 <link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
@@ -1168,7 +1174,7 @@
 
   </div>
 
-  <footer>Los datos se guardan automáticamente en tu cuenta · © 2026 JCS Tech Solutions — Costa Rica</footer>
+  <footer>Los datos se guardan automáticamente en tu cuenta · © 2026 JCS Tech Solutions — Costa Rica<br><span id="loadTimings" style="opacity:.6;"></span></footer>
 </div>
 
 <script type="module">
@@ -1366,6 +1372,7 @@ async function resolveLoginEmail(input){
 
   async function loadData(){
     setLoadBanner('loading', 'Cargando datos...');
+    const tStart = performance.now();
     dataLoaded = false;
     mediaLoaded = false;
     data = defaultData();
@@ -1373,13 +1380,14 @@ async function resolveLoginEmail(input){
     let lastError = null;
     for(let i=0; i<attempts; i++){
       try{
-        let snap = await getDoc(userDocRef());
+        // El documento principal y los chunks se piden a la vez, no uno
+        // tras otro, para ahorrar una ida y vuelta al servidor.
+        let [snap, chunkSnap] = await Promise.all([getDoc(userDocRef()), getDocs(chunksColRef())]);
         if(await migrateToSharedIfNeeded(snap)) snap = await getDoc(userDocRef());
         let main = {};
         let chunkDocs = [];
         if(snap.exists()){
           main = snap.data();
-          const chunkSnap = await getDocs(chunksColRef());
           chunkDocs = chunkSnap.docs.map(d=>({ id: d.id, ...d.data() }));
           if(main.schemaVersion !== SCHEMA_VERSION){
             chunkDocs = await migrateToChunks(main, chunkDocs);
@@ -1406,7 +1414,9 @@ async function resolveLoginEmail(input){
       await saveData();
     }
     setLoadBanner(lastError ? 'error' : 'hidden', lastError ? 'No se pudieron cargar los datos. Revisa tu conexión e intenta de nuevo.' : '');
+    const tData = performance.now();
     render();
+    const tRender = performance.now();
 
     // Productos y comprobantes (con sus fotos) se piden aparte y en paralelo,
     // después de mostrar Resumen/Movimientos/Deudas — así lo que se ve
@@ -1430,7 +1440,13 @@ async function resolveLoginEmail(input){
       }
     }
     if(mediaError) console.error('No se pudieron cargar productos/comprobantes tras varios intentos', mediaError);
+    const tMedia = performance.now();
     render();
+    // Tiempos de esta carga, discretos en el pie de página, para poder
+    // decir dónde se va la espera cuando la app se siente lenta.
+    const secs = (ms)=>(ms/1000).toFixed(1) + 's';
+    document.getElementById('loadTimings').textContent =
+      `Carga: arranque ${secs(tStart)} · datos ${secs(tData-tStart)} · pantalla ${secs(tRender-tData)} · fotos ${secs(tMedia-tRender)}`;
   }
 
   // ---------- GUARDADO POR PARTES ----------
